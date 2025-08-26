@@ -27,9 +27,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const login = (email: string, password: string): boolean => {
     // Sistema de login temporário para testes
-    if (email === 'admin' && password === '1234') {
+    if (email === 'admin@admin.com' && password === '1234') {
       setIsAuthenticated(true);
-      setUser({ email: 'admin', name: 'Administrador' });
+      setUser({ email: 'admin@admin.com', name: 'Administrador' });
       return true;
     }
     return false;

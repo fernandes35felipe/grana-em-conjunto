@@ -35,7 +35,7 @@ export const LoginForm = () => {
     } else {
       toast({
         title: "Erro no login",
-        description: "Credenciais inválidas. Use 'admin' e senha '1234' para teste.",
+        description: "Credenciais inválidas. Use 'admin@admin.com' e senha '1234' para teste.",
         variant: "destructive",
       });
     }
