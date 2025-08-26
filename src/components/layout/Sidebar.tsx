@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
   TrendingUp, 
@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -20,13 +21,23 @@ const navigation = [
 ];
 
 export const Sidebar = () => {
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
   return (
     <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
       <div className="p-6">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-2">
           <DollarSign className="h-8 w-8 text-primary" />
           <h1 className="text-xl font-bold text-foreground">FinanceAgent</h1>
         </div>
+        {user && (
+          <p className="text-sm text-muted-foreground">Olá, {user.name}</p>
+        )}
       </div>
       
       <Separator />
@@ -55,10 +66,7 @@ export const Sidebar = () => {
         <Button
           variant="outline"
           className="w-full justify-start gap-2"
-          onClick={() => {
-            // Implementar logout quando conectar Supabase
-            console.log("Logout");
-          }}
+          onClick={handleLogout}
         >
           <LogOut className="h-4 w-4" />
           Sair

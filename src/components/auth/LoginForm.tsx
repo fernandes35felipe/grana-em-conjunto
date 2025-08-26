@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export const LoginForm = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -12,11 +14,33 @@ export const LoginForm = () => {
     email: "",
     password: "",
   });
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Implementar autenticação com Supabase
-    console.log("Login:", formData);
+    setIsLoading(true);
+    
+    const success = login(formData.email, formData.password);
+    
+    if (success) {
+      toast({
+        title: "Login realizado com sucesso!",
+        description: "Bem-vindo ao dashboard financeiro.",
+      });
+      navigate("/dashboard");
+    } else {
+      toast({
+        title: "Erro no login",
+        description: "Credenciais inválidas. Use 'admin' e senha '1234' para teste.",
+        variant: "destructive",
+      });
+    }
+    
+    setIsLoading(false);
   };
 
   return (
@@ -82,8 +106,8 @@ export const LoginForm = () => {
             </Link>
           </div>
           
-          <Button type="submit" className="w-full">
-            Entrar
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? "Entrando..." : "Entrar"}
           </Button>
           
           <div className="text-center text-sm text-muted-foreground">
