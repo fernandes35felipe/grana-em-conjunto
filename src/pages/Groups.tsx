@@ -1,4 +1,6 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
+import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -51,10 +53,7 @@ const Groups = () => {
               Gerencie despesas compartilhadas com outras pessoas
             </p>
           </div>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Criar Grupo
-          </Button>
+          <AddGroupDialog />
         </div>
 
         {/* Groups Grid */}
@@ -164,10 +163,15 @@ const Groups = () => {
                     <Eye className="h-4 w-4 mr-2" />
                     Ver Detalhes
                   </Button>
-                  <Button size="sm" className="flex-1">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Novo Lançamento
-                  </Button>
+                  <AddTransactionDialog 
+                    type="expense" 
+                    trigger={
+                      <Button size="sm" className="flex-1">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Novo Lançamento
+                      </Button>
+                    } 
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -183,10 +187,14 @@ const Groups = () => {
               <p className="text-muted-foreground mb-4">
                 Crie seu primeiro grupo para começar a compartilhar despesas
               </p>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Criar Primeiro Grupo
-              </Button>
+              <AddGroupDialog 
+                trigger={
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Criar Primeiro Grupo
+                  </Button>
+                } 
+              />
             </CardContent>
           </Card>
         )}

@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { TransactionsList } from "@/components/dashboard/TransactionsList";
+import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
+import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { 
   DollarSign, 
   TrendingUp, 
@@ -11,8 +15,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { startOfMonth, endOfMonth } from "date-fns";
 
 const Dashboard = () => {
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date())
+  });
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
@@ -24,16 +34,10 @@ const Dashboard = () => {
               Visão geral das suas finanças em {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              Filtros
-            </Button>
-            <Button variant="outline" size="sm">
-              <Calendar className="h-4 w-4 mr-2" />
-              Este mês
-            </Button>
-          </div>
+          <DateFilter
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+          />
         </div>
 
         {/* Metrics Cards */}
@@ -99,18 +103,9 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button variant="outline" className="h-20 flex flex-col gap-2">
-                <TrendingUp className="h-6 w-6" />
-                <span className="text-sm">Nova Receita</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex flex-col gap-2">
-                <TrendingDown className="h-6 w-6" />
-                <span className="text-sm">Nova Despesa</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex flex-col gap-2">
-                <PiggyBank className="h-6 w-6" />
-                <span className="text-sm">Investir</span>
-              </Button>
+              <AddTransactionDialog type="income" />
+              <AddTransactionDialog type="expense" />
+              <AddInvestmentDialog />
               <Button variant="outline" className="h-20 flex flex-col gap-2">
                 <DollarSign className="h-6 w-6" />
                 <span className="text-sm">Ver Relatórios</span>

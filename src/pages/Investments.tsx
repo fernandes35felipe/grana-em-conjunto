@@ -1,4 +1,5 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -108,10 +109,14 @@ const Investments = () => {
               Acompanhe o desempenho da sua carteira de investimentos
             </p>
           </div>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Novo Investimento
-          </Button>
+          <AddInvestmentDialog 
+            trigger={
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Investimento
+              </Button>
+            } 
+          />
         </div>
 
         {/* Summary Cards */}

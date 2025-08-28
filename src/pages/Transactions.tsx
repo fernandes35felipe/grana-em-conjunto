@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { startOfMonth, endOfMonth } from "date-fns";
 
 // Dados mockados expandidos
 const mockTransactions = [
@@ -70,6 +73,10 @@ const Transactions = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date())
+  });
 
   const filteredTransactions = mockTransactions.filter(transaction => {
     const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -92,10 +99,26 @@ const Transactions = () => {
               Gerencie todas as suas entradas e saídas
             </p>
           </div>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Nova Transação
-          </Button>
+          <div className="flex gap-2">
+            <AddTransactionDialog 
+              type="income" 
+              trigger={
+                <Button variant="outline">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nova Receita
+                </Button>
+              } 
+            />
+            <AddTransactionDialog 
+              type="expense" 
+              trigger={
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nova Despesa
+                </Button>
+              } 
+            />
+          </div>
         </div>
 
         {/* Filters */}
@@ -107,45 +130,52 @@ const Transactions = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input
-                  placeholder="Buscar transações..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+            <div className="space-y-4">
+              <DateFilter
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+              />
               
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os tipos</SelectItem>
-                  <SelectItem value="income">Receitas</SelectItem>
-                  <SelectItem value="expense">Despesas</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Buscar transações..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os tipos</SelectItem>
+                    <SelectItem value="income">Receitas</SelectItem>
+                    <SelectItem value="expense">Despesas</SelectItem>
+                  </SelectContent>
+                </Select>
 
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Categoria" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as categorias</SelectItem>
-                  {categories.map(category => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as categorias</SelectItem>
+                    {categories.map(category => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              <Button variant="outline">
-                Limpar Filtros
-              </Button>
+                <Button variant="outline">
+                  Limpar Filtros
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
