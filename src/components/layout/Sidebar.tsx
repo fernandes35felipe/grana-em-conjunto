@@ -21,12 +21,12 @@ const navigation = [
 ];
 
 export const Sidebar = () => {
-  const { logout, user } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/auth");
   };
   return (
     <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
@@ -36,7 +36,7 @@ export const Sidebar = () => {
           <h1 className="text-xl font-bold text-foreground">FinanceAgent</h1>
         </div>
         {user && (
-          <p className="text-sm text-muted-foreground">Olá, {user.name}</p>
+          <p className="text-sm text-muted-foreground">Olá, {user.email}</p>
         )}
       </div>
       

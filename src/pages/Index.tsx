@@ -1,8 +1,15 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { DollarSign, TrendingUp, Users, Shield, BarChart3, PiggyBank } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { DollarSign, TrendingUp, Users, Shield, BarChart3, PiggyBank, ArrowRight } from "lucide-react";
 
 const Index = () => {
+  const { user } = useAuth();
+  
+  // Redirect if already authenticated
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
       {/* Hero Section */}
@@ -25,11 +32,11 @@ const Index = () => {
           </p>
           
           <div className="flex gap-4 justify-center">
-            <Button asChild size="lg">
-              <Link to="/register">Começar Agora</Link>
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link to="/login">Fazer Login</Link>
+            <Button asChild size="lg" className="bg-gradient-income hover:opacity-90">
+              <Link to="/auth">
+                Começar Agora
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
             </Button>
           </div>
         </div>
@@ -118,8 +125,8 @@ const Index = () => {
           <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
             Junte-se a milhares de usuários que já conquistaram o controle financeiro
           </p>
-          <Button size="lg" asChild>
-            <Link to="/register">Criar Conta Gratuita</Link>
+          <Button size="lg" asChild className="bg-gradient-investment hover:opacity-90">
+            <Link to="/auth">Criar Conta Gratuita</Link>
           </Button>
         </div>
       </section>
