@@ -54,7 +54,11 @@ export default function Auth() {
     }
     
     setIsSubmitting(true);
-    await signUp(registerData.email, registerData.password, registerData.fullName);
+    const { error } = await signUp(registerData.email, registerData.password, registerData.fullName);
+    if (!error) {
+      // Clear form on successful registration
+      setRegisterData({ fullName: '', email: '', password: '', confirmPassword: '' });
+    }
     setIsSubmitting(false);
   };
 
