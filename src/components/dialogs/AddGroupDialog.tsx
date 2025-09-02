@@ -11,9 +11,10 @@ import { Users, Plus } from "lucide-react";
 
 interface AddGroupDialogProps {
   trigger?: React.ReactNode;
+  onGroupCreated?: () => void;
 }
 
-export const AddGroupDialog = ({ trigger }: AddGroupDialogProps) => {
+export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -52,16 +53,28 @@ export const AddGroupDialog = ({ trigger }: AddGroupDialogProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const { error } = await supabase
+      const { data: groupData, error: groupError } = await supabase
         .from('groups')
         .insert({
           name: formData.name,
           description: formData.description,
           color: formData.color,
           created_by: user.id
+        })
+        .select()
+        .single();
+
+      if (groupError) throw groupError;
+
+      // Adicionar o criador como membro do grupo automaticamente
+      const { error: memberError } = await supabase
+        .from('group_members')
+        .insert({
+          user_id: user.id,
+          group_id: groupData.id
         });
 
-      if (error) throw error;
+      if (memberError) throw memberError;
 
       toast({
         title: "Sucesso",
@@ -74,6 +87,9 @@ export const AddGroupDialog = ({ trigger }: AddGroupDialogProps) => {
         color: "blue"
       });
       setOpen(false);
+      
+      // Notificar o componente pai para recarregar os dados
+      onGroupCreated?.();
     } catch (error) {
       console.error('Erro ao criar grupo:', error);
       toast({
