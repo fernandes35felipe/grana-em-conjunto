@@ -55,14 +55,44 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      // Buscar grupos criados pelo usuário
+      const { data: createdGroups, error: createdError } = await supabase
         .from('groups')
         .select('id, name')
-        .or(`created_by.eq.${user.id},group_members.user_id.eq.${user.id}`)
-        .order('name');
+        .eq('created_by', user.id);
 
-      if (error) throw error;
-      setGroups(data || []);
+      if (createdError) throw createdError;
+
+      // Buscar grupos onde o usuário é membro
+      const { data: memberGroups, error: memberError } = await supabase
+        .from('group_members')
+        .select(`
+          group_id,
+          groups!inner (
+            id,
+            name
+          )
+        `)
+        .eq('user_id', user.id);
+
+      if (memberError) {
+        console.log('Erro ao buscar grupos como membro:', memberError);
+        setGroups(createdGroups || []);
+        return;
+      }
+
+      // Combinar grupos
+      const memberGroupsData = memberGroups?.map(mg => ({
+        id: mg.groups.id,
+        name: mg.groups.name
+      })) || [];
+
+      const allGroups = [...(createdGroups || []), ...memberGroupsData];
+      const uniqueGroups = allGroups.filter((group, index, self) => 
+        index === self.findIndex(g => g.id === group.id)
+      );
+
+      setGroups(uniqueGroups.sort((a, b) => a.name.localeCompare(b.name)));
     } catch (error) {
       console.error('Erro ao carregar grupos:', error);
     }

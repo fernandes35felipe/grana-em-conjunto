@@ -70,17 +70,27 @@ const Transactions = () => {
 
     const { data, error } = await supabase
       .from('transactions')
-      .select(`
-        *,
-        groups:group_id (
-          id,
-          name
-        )
-      `)
+      .select('*')
       .eq('user_id', user.id)
       .order('date', { ascending: false });
 
     if (error) throw error;
+
+    // Carregar nomes dos grupos separadamente para evitar recursão
+    const groupIds = [...new Set(data?.filter(t => t.group_id).map(t => t.group_id))];
+    let groupsMap: Record<string, string> = {};
+    
+    if (groupIds.length > 0) {
+      const { data: groupsData } = await supabase
+        .from('groups')
+        .select('id, name')
+        .in('id', groupIds);
+      
+      groupsMap = groupsData?.reduce((acc, group) => ({
+        ...acc,
+        [group.id]: group.name
+      }), {}) || {};
+    }
 
     const formattedTransactions: Transaction[] = data?.map(t => ({
       id: t.id,
@@ -90,7 +100,7 @@ const Transactions = () => {
       category: t.category,
       date: t.date,
       group_id: t.group_id,
-      group_name: t.groups?.name || null,
+      group_name: t.group_id ? groupsMap[t.group_id] || null : null,
       user_id: t.user_id
     })) || [];
 
@@ -101,14 +111,45 @@ const Transactions = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await supabase
+    // Buscar grupos criados pelo usuário
+    const { data: createdGroups, error: createdError } = await supabase
       .from('groups')
       .select('id, name')
-      .or(`created_by.eq.${user.id},group_members.user_id.eq.${user.id}`)
-      .order('name');
+      .eq('created_by', user.id);
 
-    if (error) throw error;
-    setGroups(data || []);
+    if (createdError) throw createdError;
+
+    // Buscar grupos onde o usuário é membro
+    const { data: memberGroups, error: memberError } = await supabase
+      .from('group_members')
+      .select(`
+        group_id,
+        groups!inner (
+          id,
+          name
+        )
+      `)
+      .eq('user_id', user.id);
+
+    if (memberError) {
+      console.log('Erro ao buscar grupos como membro:', memberError);
+      // Se há erro, usar apenas grupos criados
+      setGroups(createdGroups || []);
+      return;
+    }
+
+    // Combinar grupos criados e grupos onde é membro, removendo duplicatas
+    const memberGroupsData = memberGroups?.map(mg => ({
+      id: mg.groups.id,
+      name: mg.groups.name
+    })) || [];
+
+    const allGroups = [...(createdGroups || []), ...memberGroupsData];
+    const uniqueGroups = allGroups.filter((group, index, self) => 
+      index === self.findIndex(g => g.id === group.id)
+    );
+
+    setGroups(uniqueGroups.sort((a, b) => a.name.localeCompare(b.name)));
   };
 
   const filteredTransactions = transactions.filter(transaction => {
