@@ -14,20 +14,28 @@ interface Group {
   name: string;
 }
 
+interface User {
+  id: string;
+  full_name: string | null;
+}
+
 interface AddTransactionDialogProps {
   type: "income" | "expense";
   trigger?: React.ReactNode;
+  onSuccess?: () => void;
 }
 
-export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProps) => {
+export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [groupUsers, setGroupUsers] = useState<User[]>([]);
   const [formData, setFormData] = useState({
     description: "",
     amount: "",
     category: "",
     group_id: "",
+    assigned_to: "",
     date: new Date().toISOString().split('T')[0]
   });
   const { toast } = useToast();
@@ -44,9 +52,13 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
 
   const loadGroups = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('groups')
         .select('id, name')
+        .or(`created_by.eq.${user.id},group_members.user_id.eq.${user.id}`)
         .order('name');
 
       if (error) throw error;
@@ -55,6 +67,51 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
       console.error('Erro ao carregar grupos:', error);
     }
   };
+
+  const loadGroupUsers = async (groupId: string) => {
+    try {
+      // Primeiro buscar os membros do grupo
+      const { data: membersData, error: membersError } = await supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+
+      if (membersError) throw membersError;
+
+      if (!membersData || membersData.length === 0) {
+        setGroupUsers([]);
+        return;
+      }
+
+      // Depois buscar os perfis dos usuários
+      const userIds = membersData.map(m => m.user_id);
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .in('user_id', userIds);
+
+      if (profilesError) throw profilesError;
+      
+      const users = profilesData?.map(profile => ({
+        id: profile.user_id,
+        full_name: profile.full_name || 'Usuário'
+      })) || [];
+
+      setGroupUsers(users);
+    } catch (error) {
+      console.error('Erro ao carregar usuários do grupo:', error);
+      setGroupUsers([]);
+    }
+  };
+
+  useEffect(() => {
+    if (formData.group_id) {
+      loadGroupUsers(formData.group_id);
+    } else {
+      setGroupUsers([]);
+      setFormData(prev => ({ ...prev, assigned_to: "" }));
+    }
+  }, [formData.group_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +135,7 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
       const { error } = await supabase
         .from('transactions')
         .insert({
-          user_id: user.id,
+          user_id: formData.assigned_to || user.id,
           description: formData.description,
           amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
           type,
@@ -99,9 +156,11 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
         amount: "",
         category: "",
         group_id: "",
+        assigned_to: "",
         date: new Date().toISOString().split('T')[0]
       });
       setOpen(false);
+      onSuccess?.();
     } catch (error) {
       console.error('Erro ao salvar transação:', error);
       toast({
@@ -193,7 +252,7 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
                 <SelectValue placeholder="Selecione um grupo (opcional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nenhum grupo</SelectItem>
+                <SelectItem value="">Pessoal</SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
@@ -202,6 +261,25 @@ export const AddTransactionDialog = ({ type, trigger }: AddTransactionDialogProp
               </SelectContent>
             </Select>
           </div>
+
+          {formData.group_id && groupUsers.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="assigned_to">Atribuir a usuário (opcional)</Label>
+              <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um usuário (opcional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Eu mesmo</SelectItem>
+                  {groupUsers.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.full_name || 'Usuário'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="date">Data</Label>

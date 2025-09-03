@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
@@ -10,83 +10,126 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { startOfMonth, endOfMonth } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-// Dados mockados expandidos
-const mockTransactions = [
-  {
-    id: "1",
-    description: "Salário mensal",
-    amount: 8500.00,
-    type: "income" as const,
-    category: "Salário",
-    date: "2024-01-15",
-    group: null
-  },
-  {
-    id: "2",
-    description: "Supermercado Pão de Açúcar",
-    amount: -450.00,
-    type: "expense" as const,
-    category: "Alimentação",
-    date: "2024-01-14",
-    group: "Família"
-  },
-  {
-    id: "3",
-    description: "Investimento CDB",
-    amount: -2000.00,
-    type: "expense" as const,
-    category: "Investimentos",
-    date: "2024-01-13",
-    group: null
-  },
-  {
-    id: "4",
-    description: "Freelance Design",
-    amount: 1200.00,
-    type: "income" as const,
-    category: "Renda Extra",
-    date: "2024-01-12",
-    group: null
-  },
-  {
-    id: "5",
-    description: "Conta de luz",
-    amount: -280.50,
-    type: "expense" as const,
-    category: "Utilidades",
-    date: "2024-01-11",
-    group: "Casa"
-  },
-  {
-    id: "6",
-    description: "Dividendos ITUB4",
-    amount: 125.80,
-    type: "income" as const,
-    category: "Dividendos",
-    date: "2024-01-10",
-    group: null
-  }
-];
+interface Transaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category: string;
+  date: string;
+  group_id: string | null;
+  group_name?: string;
+  user_id: string;
+}
+
+interface Group {
+  id: string;
+  name: string;
+}
 
 const Transactions = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [filterGroup, setFilterGroup] = useState("all");
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date())
   });
+  const { toast } = useToast();
 
-  const filteredTransactions = mockTransactions.filter(transaction => {
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([loadTransactions(), loadGroups()]);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar transações",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTransactions = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select(`
+        *,
+        groups:group_id (
+          id,
+          name
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+
+    const formattedTransactions: Transaction[] = data?.map(t => ({
+      id: t.id,
+      description: t.description,
+      amount: t.amount,
+      type: t.type as 'income' | 'expense',
+      category: t.category,
+      date: t.date,
+      group_id: t.group_id,
+      group_name: t.groups?.name || null,
+      user_id: t.user_id
+    })) || [];
+
+    setTransactions(formattedTransactions);
+  };
+
+  const loadGroups = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('groups')
+      .select('id, name')
+      .or(`created_by.eq.${user.id},group_members.user_id.eq.${user.id}`)
+      .order('name');
+
+    if (error) throw error;
+    setGroups(data || []);
+  };
+
+  const filteredTransactions = transactions.filter(transaction => {
     const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === "all" || transaction.type === filterType;
     const matchesCategory = filterCategory === "all" || transaction.category === filterCategory;
+    const matchesGroup = filterGroup === "all" || 
+      (filterGroup === "personal" && !transaction.group_id) ||
+      (filterGroup === transaction.group_id);
     
-    return matchesSearch && matchesType && matchesCategory;
+    return matchesSearch && matchesType && matchesCategory && matchesGroup;
   });
 
-  const categories = Array.from(new Set(mockTransactions.map(t => t.category)));
+  const categories = Array.from(new Set(transactions.map(t => t.category)));
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setFilterType("all");
+    setFilterCategory("all");
+    setFilterGroup("all");
+  };
 
   return (
     <DashboardLayout>
@@ -102,6 +145,7 @@ const Transactions = () => {
           <div className="flex gap-2">
             <AddTransactionDialog 
               type="income" 
+              onSuccess={loadTransactions}
               trigger={
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" />
@@ -111,6 +155,7 @@ const Transactions = () => {
             />
             <AddTransactionDialog 
               type="expense" 
+              onSuccess={loadTransactions}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
@@ -136,7 +181,7 @@ const Transactions = () => {
                 onDateRangeChange={setDateRange}
               />
               
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -172,7 +217,22 @@ const Transactions = () => {
                   </SelectContent>
                 </Select>
 
-                <Button variant="outline">
+                <Select value={filterGroup} onValueChange={setFilterGroup}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Grupo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os grupos</SelectItem>
+                    <SelectItem value="personal">Pessoal</SelectItem>
+                    {groups.map(group => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button variant="outline" onClick={clearFilters}>
                   Limpar Filtros
                 </Button>
               </div>
@@ -270,9 +330,13 @@ const Transactions = () => {
                         <Badge variant="secondary" className="text-xs">
                           {transaction.category}
                         </Badge>
-                        {transaction.group && (
+                        {transaction.group_name ? (
                           <Badge variant="outline" className="text-xs">
-                            Grupo: {transaction.group}
+                            {transaction.group_name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-muted-foreground">
+                            Pessoal
                           </Badge>
                         )}
                         <span className="text-xs text-muted-foreground">
