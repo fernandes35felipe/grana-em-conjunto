@@ -34,8 +34,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     description: "",
     amount: "",
     category: "",
-    group_id: "",
-    assigned_to: "",
+    group_id: "personal",
+    assigned_to: "self",
     date: new Date().toISOString().split('T')[0]
   });
   const { toast } = useToast();
@@ -105,11 +105,11 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
   };
 
   useEffect(() => {
-    if (formData.group_id) {
+    if (formData.group_id && formData.group_id !== "personal") {
       loadGroupUsers(formData.group_id);
     } else {
       setGroupUsers([]);
-      setFormData(prev => ({ ...prev, assigned_to: "" }));
+      setFormData(prev => ({ ...prev, assigned_to: "self" }));
     }
   }, [formData.group_id]);
 
@@ -135,12 +135,12 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       const { error } = await supabase
         .from('transactions')
         .insert({
-          user_id: formData.assigned_to || user.id,
+          user_id: (formData.assigned_to === "self" || !formData.assigned_to) ? user.id : formData.assigned_to,
           description: formData.description,
           amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
           type,
           category: formData.category,
-          group_id: formData.group_id || null,
+          group_id: formData.group_id === "personal" ? null : formData.group_id,
           date: formData.date
         });
 
@@ -155,8 +155,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         description: "",
         amount: "",
         category: "",
-        group_id: "",
-        assigned_to: "",
+        group_id: "personal",
+        assigned_to: "self",
         date: new Date().toISOString().split('T')[0]
       });
       setOpen(false);
@@ -252,7 +252,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 <SelectValue placeholder="Selecione um grupo (opcional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Pessoal</SelectItem>
+                <SelectItem value="personal">Pessoal</SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
@@ -270,7 +270,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                   <SelectValue placeholder="Selecione um usuário (opcional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Eu mesmo</SelectItem>
+                  <SelectItem value="self">Eu mesmo</SelectItem>
                   {groupUsers.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.full_name || 'Usuário'}
