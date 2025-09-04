@@ -26,7 +26,7 @@ export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
     type: "",
     amount: "",
     current_value: "",
-    group_id: "",
+    group_id: "none",
     maturity_date: ""
   });
   const { toast } = useToast();
@@ -82,7 +82,7 @@ export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
           type: formData.type,
           amount,
           current_value: currentValue,
-          group_id: formData.group_id || null,
+          group_id: formData.group_id === "none" ? null : formData.group_id,
           maturity_date: formData.maturity_date || null
         });
 
@@ -98,7 +98,7 @@ export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
         type: "",
         amount: "",
         current_value: "",
-        group_id: "",
+        group_id: "none",
         maturity_date: ""
       });
       setOpen(false);
@@ -195,7 +195,7 @@ export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
                 <SelectValue placeholder="Selecione um grupo (opcional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nenhum grupo</SelectItem>
+                <SelectItem value="none">Nenhum grupo</SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
