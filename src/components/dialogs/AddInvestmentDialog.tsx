@@ -13,6 +13,13 @@ interface Group {
   name: string;
 }
 
+interface InvestmentGoal {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+}
+
 interface AddInvestmentDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
@@ -22,12 +29,14 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoal[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     type: "",
     amount: "",
     current_value: "",
     group_id: "none",
+    goal_id: "none",
     maturity_date: ""
   });
   const { toast } = useToast();
@@ -37,6 +46,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
   useEffect(() => {
     if (open) {
       loadGroups();
+      loadInvestmentGoals();
     }
   }, [open]);
 
@@ -51,6 +61,20 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
       setGroups(data || []);
     } catch (error) {
       console.error('Erro ao carregar grupos:', error);
+    }
+  };
+
+  const loadInvestmentGoals = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('investment_goals')
+        .select('id, name, target_amount, current_amount')
+        .order('name');
+
+      if (error) throw error;
+      setInvestmentGoals(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar metas:', error);
     }
   };
 
@@ -89,6 +113,31 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
       if (error) throw error;
 
+      // Update investment goal if selected
+      if (formData.goal_id !== "none") {
+        // First get the current goal data
+        const { data: goalData, error: fetchError } = await supabase
+          .from('investment_goals')
+          .select('current_amount')
+          .eq('id', formData.goal_id)
+          .single();
+
+        if (fetchError) {
+          console.error('Erro ao buscar meta:', fetchError);
+        } else {
+          const { error: goalError } = await supabase
+            .from('investment_goals')
+            .update({
+              current_amount: goalData.current_amount + amount
+            })
+            .eq('id', formData.goal_id);
+
+          if (goalError) {
+            console.error('Erro ao atualizar meta:', goalError);
+          }
+        }
+      }
+
       toast({
         title: "Sucesso",
         description: "Investimento adicionado com sucesso!"
@@ -100,6 +149,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
         amount: "",
         current_value: "",
         group_id: "none",
+        goal_id: "none",
         maturity_date: ""
       });
       setOpen(false);
@@ -201,6 +251,23 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
+            <Select value={formData.goal_id} onValueChange={(value) => setFormData(prev => ({ ...prev, goal_id: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma meta (opcional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhuma meta</SelectItem>
+                {investmentGoals.map((goal) => (
+                  <SelectItem key={goal.id} value={goal.id}>
+                    {goal.name} ({((goal.current_amount / goal.target_amount) * 100).toFixed(1)}% completo)
                   </SelectItem>
                 ))}
               </SelectContent>
