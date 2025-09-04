@@ -15,9 +15,10 @@ interface Group {
 
 interface AddInvestmentDialogProps {
   trigger?: React.ReactNode;
+  onSuccess?: () => void;
 }
 
-export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
+export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -102,6 +103,7 @@ export const AddInvestmentDialog = ({ trigger }: AddInvestmentDialogProps) => {
         maturity_date: ""
       });
       setOpen(false);
+      onSuccess?.();
     } catch (error) {
       console.error('Erro ao salvar investimento:', error);
       toast({
