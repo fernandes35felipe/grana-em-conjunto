@@ -1,7 +1,10 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle, ArrowDownCircle, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface Transaction {
   id: string;
@@ -10,47 +13,96 @@ interface Transaction {
   type: "income" | "expense";
   category: string;
   date: string;
-  group?: string;
+  group?: {
+    name: string;
+  };
 }
 
-// Dados mockados para demonstração
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    description: "Salário mensal",
-    amount: 8500.00,
-    type: "income",
-    category: "Salário",
-    date: "2024-01-15"
-  },
-  {
-    id: "2",
-    description: "Supermercado",
-    amount: -450.00,
-    type: "expense",
-    category: "Alimentação",
-    date: "2024-01-14",
-    group: "Família"
-  },
-  {
-    id: "3",
-    description: "Investimento CDB",
-    amount: -2000.00,
-    type: "expense",
-    category: "Investimentos",
-    date: "2024-01-13"
-  },
-  {
-    id: "4",
-    description: "Freelance",
-    amount: 1200.00,
-    type: "income",
-    category: "Renda Extra",
-    date: "2024-01-12"
-  }
-];
-
 export const TransactionsList = () => {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    loadTransactions();
+  }, []);
+
+  const loadTransactions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          description,
+          amount,
+          type,
+          category,
+          date,
+          group_id,
+          groups!left (
+            name
+          )
+        `)
+        .order('date', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+
+      const formattedTransactions = data?.map(transaction => ({
+        id: transaction.id,
+        description: transaction.description,
+        amount: Number(transaction.amount),
+        type: transaction.type as "income" | "expense",
+        category: transaction.category,
+        date: transaction.date,
+        group: transaction.groups ? { name: transaction.groups.name } : undefined
+      })) || [];
+
+      setTransactions(formattedTransactions);
+    } catch (error) {
+      console.error('Erro ao carregar transações:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível carregar as transações"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Transações Recentes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-muted rounded-full animate-pulse" />
+                  <div>
+                    <div className="w-32 h-4 bg-muted rounded animate-pulse mb-2" />
+                    <div className="w-20 h-3 bg-muted rounded animate-pulse" />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="w-20 h-4 bg-muted rounded animate-pulse mb-2" />
+                  <div className="w-16 h-3 bg-muted rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -61,7 +113,12 @@ export const TransactionsList = () => {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {mockTransactions.map((transaction) => (
+          {transactions.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4">
+              Nenhuma transação encontrada
+            </p>
+          ) : (
+            transactions.map((transaction) => (
             <div
               key={transaction.id}
               className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
@@ -87,7 +144,7 @@ export const TransactionsList = () => {
                     </Badge>
                     {transaction.group && (
                       <Badge variant="outline" className="text-xs">
-                        Grupo: {transaction.group}
+                        Grupo: {transaction.group.name}
                       </Badge>
                     )}
                   </div>
@@ -109,7 +166,8 @@ export const TransactionsList = () => {
                 </p>
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
     </Card>

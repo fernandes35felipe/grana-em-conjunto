@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { GroupDetailsModal } from "@/components/groups/GroupDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ const Groups = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string } | null>(null);
   const { toast } = useToast();
 
   const fetchGroups = async () => {
@@ -324,7 +326,12 @@ const Groups = () => {
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-2">
-                    <Button variant="outline" size="sm" className="flex-1">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
+                    >
                       <Eye className="h-4 w-4 mr-2" />
                       Ver Detalhes
                     </Button>
@@ -410,9 +417,16 @@ const Groups = () => {
             </CardContent>
           </Card>
         </div>
-      </div>
-    </DashboardLayout>
-  );
-};
+        </div>
 
-export default Groups;
+        <GroupDetailsModal
+          isOpen={selectedGroup !== null}
+          onClose={() => setSelectedGroup(null)}
+          groupId={selectedGroup?.id || ""}
+          groupName={selectedGroup?.name || ""}
+        />
+      </DashboardLayout>
+    );
+  };
+  
+  export default Groups;
