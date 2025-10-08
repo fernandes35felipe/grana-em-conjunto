@@ -1,3 +1,5 @@
+// Em src/components/filters/DateFilter.tsx
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -20,6 +22,7 @@ interface DateFilterProps {
 
 export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) => {
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState("current-month");
 
   const presets = [
     {
@@ -27,8 +30,8 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
       value: "current-month",
       getRange: () => ({
         from: startOfMonth(new Date()),
-        to: endOfMonth(new Date())
-      })
+        to: endOfMonth(new Date()),
+      }),
     },
     {
       label: "Mês passado",
@@ -37,9 +40,9 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const lastMonth = subMonths(new Date(), 1);
         return {
           from: startOfMonth(lastMonth),
-          to: endOfMonth(lastMonth)
+          to: endOfMonth(lastMonth),
         };
-      }
+      },
     },
     {
       label: "Próximo mês",
@@ -48,31 +51,29 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const nextMonth = addMonths(new Date(), 1);
         return {
           from: startOfMonth(nextMonth),
-          to: endOfMonth(nextMonth)
+          to: endOfMonth(nextMonth),
         };
-      }
+      },
     },
     {
       label: "Este ano",
       value: "current-year",
       getRange: () => ({
         from: startOfYear(new Date()),
-        to: endOfYear(new Date())
-      })
+        to: endOfYear(new Date()),
+      }),
     },
     {
       label: "Personalizado",
       value: "custom",
-      getRange: () => dateRange
-    }
+      getRange: () => dateRange,
+    },
   ];
-
-  const [selectedPreset, setSelectedPreset] = useState("current-month");
 
   const handlePresetChange = (value: string) => {
     setSelectedPreset(value);
     if (value !== "custom") {
-      const preset = presets.find(p => p.value === value);
+      const preset = presets.find((p) => p.value === value);
       if (preset) {
         onDateRangeChange(preset.getRange());
       }
@@ -81,11 +82,11 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
 
   const formatDateRange = (range: DateRange) => {
     if (!range.from || !range.to) return "Selecione o período";
-    
+
     if (format(range.from, "yyyy-MM", { locale: ptBR }) === format(range.to, "yyyy-MM", { locale: ptBR })) {
       return format(range.from, "MMMM 'de' yyyy", { locale: ptBR });
     }
-    
+
     return `${format(range.from, "dd/MM/yy", { locale: ptBR })} - ${format(range.to, "dd/MM/yy", { locale: ptBR })}`;
   };
 
@@ -108,16 +109,21 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
-            className={cn(
-              "w-[240px] justify-start text-left font-normal",
-              !dateRange.from && "text-muted-foreground"
-            )}
+            className={cn("w-[240px] justify-start text-left font-normal", !dateRange.from && "text-muted-foreground")}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
             {formatDateRange(dateRange)}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent
+          className="w-auto p-0 date-filter-popover"
+          align="start"
+          side="bottom"
+          sideOffset={4}
+          avoidCollisions={true}
+          collisionPadding={10}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <Calendar
             initialFocus
             mode="range"

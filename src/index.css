@@ -47,10 +47,10 @@ All colors MUST be HSL.
     /* Additional financial colors */
     --income: 16 185 129 1;
     --income-foreground: 255 255 255 1;
-    
+
     --expense: 239 68 68 1;
     --expense-foreground: 255 255 255 1;
-    
+
     --investment: 59 130 246 1;
     --investment-foreground: 255 255 255 1;
 
@@ -64,7 +64,7 @@ All colors MUST be HSL.
     --gradient-expense: linear-gradient(135deg, hsl(239 68 68 / 0.9), hsl(220 38 57 / 0.9));
     --gradient-investment: linear-gradient(135deg, hsl(59 130 246 / 0.9), hsl(99 102 241 / 0.9));
     --gradient-card: linear-gradient(135deg, hsl(255 255 255 / 1), hsl(248 250 252 / 0.8));
-    
+
     --shadow-card: 0 1px 3px 0 hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
     --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
     --shadow-financial: 0 4px 6px -1px hsl(16 185 129 / 0.1), 0 2px 4px -1px hsl(16 185 129 / 0.06);

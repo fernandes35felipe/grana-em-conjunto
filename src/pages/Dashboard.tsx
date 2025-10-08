@@ -5,14 +5,7 @@ import { TransactionsList } from "@/components/dashboard/TransactionsList";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
-import { 
-  DollarSign, 
-  TrendingUp, 
-  TrendingDown, 
-  PiggyBank,
-  Calendar,
-  Filter
-} from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { startOfMonth, endOfMonth } from "date-fns";
@@ -22,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
-    to: endOfMonth(new Date())
+    to: endOfMonth(new Date()),
   });
   const [metrics, setMetrics] = useState({
     totalBalance: 0,
@@ -31,7 +24,7 @@ const Dashboard = () => {
     totalInvestments: 0,
     incomeChange: 0,
     expenseChange: 0,
-    investmentChange: 0
+    investmentChange: 0,
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -43,28 +36,26 @@ const Dashboard = () => {
   const loadMetrics = async () => {
     try {
       setLoading(true);
-      
+
       // Get transactions for the selected period
       const { data: transactions, error: transError } = await supabase
-        .from('transactions')
-        .select('amount, type, date')
-        .gte('date', dateRange.from?.toISOString().split('T')[0])
-        .lte('date', dateRange.to?.toISOString().split('T')[0]);
+        .from("transactions")
+        .select("amount, type, date")
+        .gte("date", dateRange.from?.toISOString().split("T")[0])
+        .lte("date", dateRange.to?.toISOString().split("T")[0]);
 
       if (transError) throw transError;
 
       // Get investments
-      const { data: investments, error: invError } = await supabase
-        .from('investments')
-        .select('current_value, amount, created_at');
+      const { data: investments, error: invError } = await supabase.from("investments").select("current_value, amount, created_at");
 
       if (invError) throw invError;
 
       // Calculate metrics
-      const income = transactions?.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-      const expenses = transactions?.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+      const income = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+      const expenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
       const totalInvestments = investments?.reduce((sum, inv) => sum + Number(inv.current_value), 0) || 0;
-      const balance = income - expenses;
+      const balance = income + expenses - totalInvestments;
 
       setMetrics({
         totalBalance: balance,
@@ -73,14 +64,14 @@ const Dashboard = () => {
         totalInvestments: totalInvestments,
         incomeChange: 8.2, // Placeholder - can be calculated with previous period data
         expenseChange: -5.1, // Placeholder
-        investmentChange: 15.8 // Placeholder
+        investmentChange: 15.8, // Placeholder
       });
     } catch (error) {
-      console.error('Erro ao carregar métricas:', error);
+      console.error("Erro ao carregar métricas:", error);
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Não foi possível carregar as métricas"
+        description: "Não foi possível carregar as métricas",
       });
     } finally {
       setLoading(false);
@@ -95,47 +86,42 @@ const Dashboard = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground">
-              Visão geral das suas finanças em {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              Visão geral das suas finanças em {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
             </p>
           </div>
-          <DateFilter
-            dateRange={dateRange}
-            onDateRangeChange={setDateRange}
-          />
+          <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
         </div>
 
         {/* Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {loading ? (
-            [...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />
-            ))
+            [...Array(4)].map((_, i) => <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />)
           ) : (
             <>
               <MetricCard
                 title="Saldo Total"
-                value={metrics.totalBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                value={metrics.totalBalance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<DollarSign className="h-5 w-5 text-primary" />}
                 change="+12.5% em relação ao mês anterior"
                 changeType="positive"
               />
               <MetricCard
                 title="Receitas"
-                value={metrics.totalIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                value={metrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingUp className="h-5 w-5 text-success" />}
                 change={`+${metrics.incomeChange}% este mês`}
                 changeType="positive"
               />
               <MetricCard
                 title="Despesas"
-                value={metrics.totalExpenses.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                value={metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingDown className="h-5 w-5 text-destructive" />}
                 change={`${metrics.expenseChange}% este mês`}
                 changeType="positive"
               />
               <MetricCard
                 title="Investimentos"
-                value={metrics.totalInvestments.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                value={metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<PiggyBank className="h-5 w-5 text-accent" />}
                 change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
@@ -150,9 +136,7 @@ const Dashboard = () => {
           <Card>
             <CardHeader>
               <CardTitle>Resumo Mensal</CardTitle>
-              <CardDescription>
-                Evolução das receitas e despesas nos últimos 6 meses
-              </CardDescription>
+              <CardDescription>Evolução das receitas e despesas nos últimos 6 meses</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px] flex items-center justify-center bg-muted/30 rounded-lg">
@@ -169,9 +153,7 @@ const Dashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle>Ações Rápidas</CardTitle>
-            <CardDescription>
-              Acesse rapidamente as funcionalidades mais utilizadas
-            </CardDescription>
+            <CardDescription>Acesse rapidamente as funcionalidades mais utilizadas</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
