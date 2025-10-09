@@ -1,16 +1,16 @@
 # Code Merge Output
-Generated at: 2025-10-08T21:07:48.332Z
+Generated at: 2025-10-09T03:15:06.851Z
 Source path: .
-Files processed: 87
-Total lines: 9986
-Total characters: 336615
+Files processed: 91
+Total lines: 11093
+Total characters: 371161
 
 File types:
-  - tsx: 71 files (8.942 lines)
-  - ts: 8 files (754 lines)
+  - tsx: 74 files (10.034 lines)
+  - ts: 8 files (748 lines)
   - json: 5 files (179 lines)
   - js: 2 files (37 lines)
-  - md: 1 files (74 lines)
+  - md: 2 files (95 lines)
 
 Project structure & file index:
 ./
@@ -19,6 +19,7 @@ Project structure & file index:
   - package.json (85 lines)
   - postcss.config.js (7 lines)
   - README.md (74 lines)
+  - RECURRENCE_FEATURE.md (21 lines)
   - tailwind.config.ts (128 lines)
   - tsconfig.app.json (31 lines)
   - tsconfig.json (20 lines)
@@ -32,21 +33,24 @@ Project structure & file index:
       auth/
         - ProtectedRoute.tsx (24 lines)
       dashboard/
+        - FixedBalanceCard.tsx (197 lines)
         - MetricCard.tsx (47 lines)
         - TransactionsList.tsx (175 lines)
       dialogs/
         - AddGoalDialog.tsx (219 lines)
         - AddGroupDialog.tsx (190 lines)
         - AddInvestmentDialog.tsx (308 lines)
-        - AddTransactionDialog.tsx (345 lines)
+        - AddTransactionDialog.tsx (436 lines)
+        - EditGoalDialog.tsx (227 lines)
+        - EditGroupDialog.tsx (468 lines)
         - InvestmentDetailsModal.tsx (219 lines)
       filters/
         - DateFilter.tsx (147 lines)
       groups/
         - GroupDetailsModal.tsx (325 lines)
       layout/
-        - DashboardLayout.tsx (17 lines)
-        - Sidebar.tsx (77 lines)
+        - DashboardLayout.tsx (44 lines)
+        - Sidebar.tsx (83 lines)
       ui/
         - accordion.tsx (57 lines)
         - alert-dialog.tsx (140 lines)
@@ -105,17 +109,17 @@ Project structure & file index:
     integrations/
       supabase/
         - client.ts (17 lines)
-        - types.ts (381 lines)
+        - types.ts (375 lines)
     lib/
       - utils.ts (7 lines)
     pages/
       - Auth.tsx (273 lines)
-      - Dashboard.tsx (176 lines)
-      - Groups.tsx (432 lines)
+      - Dashboard.tsx (168 lines)
+      - Groups.tsx (392 lines)
       - Index.tsx (138 lines)
-      - Investments.tsx (473 lines)
+      - Investments.tsx (572 lines)
       - NotFound.tsx (28 lines)
-      - Transactions.tsx (407 lines)
+      - Transactions.tsx (432 lines)
 ================================================================================
 
 STARTOFFILE: components.json
@@ -359,6 +363,32 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-trick
 ----------------------------------------
 ENDOFFILE: README.md
 
+STARTOFFILE: RECURRENCE_FEATURE.md
+----------------------------------------
+# Sistema de Lançamentos Recorrentes e Fixos
+
+## Resumo da Implementação
+
+Implementei um sistema completo para gerenciar lançamentos recorrentes e fixos no FinanceAgent.
+
+## 📋 Arquivos Criados/Modificados
+
+### 1. Migration SQL (`supabase/migrations/add_recurrence_fields.sql`)
+Adiciona os seguintes campos à tabela `transactions`:
+- `is_recurring` (BOOLEAN): Indica se é recorrente
+- `is_fixed` (BOOLEAN): Indica se é despesa/receita fixa
+- `recurrence_id` (UUID): ID compartilhado entre transações da mesma recorrência
+- `recurrence_count` (INTEGER): Número de repetições
+
+### 2. AddTransactionDialog Atualizado (`src/components/dialogs/AddTransactionDialog.tsx`)
+**Novas funcionalidades:**
+- Switch para marcar como "Lançamento Fixo"
+- Switch para marcar como "Lançamento Recorrente"
+- Campo para definir quantidade de meses de recorrência
+- Lógica para criar múltip
+----------------------------------------
+ENDOFFILE: RECURRENCE_FEATURE.md
+
 STARTOFFILE: src\App.tsx
 ----------------------------------------
 import { Toaster } from "@/components/ui/toaster";
@@ -447,6 +477,208 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 };
 ----------------------------------------
 ENDOFFILE: src\components\auth\ProtectedRoute.tsx
+
+STARTOFFILE: src\components\dashboard\FixedBalanceCard.tsx
+----------------------------------------
+import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+interface FixedTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category: string;
+}
+
+export const FixedBalanceCard = () => {
+  const [fixedIncome, setFixedIncome] = useState<FixedTransaction[]>([]);
+  const [fixedExpenses, setFixedExpenses] = useState<FixedTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    loadFixedTransactions();
+  }, []);
+
+  const loadFixedTransactions = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id, description, amount, type, category')
+        .eq('user_id', user.id)
+        .eq('is_fixed', true)
+        .order('amount', { ascending: false });
+
+      if (error) throw error;
+
+      const income = data?.filter(t => t.type === 'income') || [];
+      const expenses = data?.filter(t => t.type === 'expense') || [];
+
+      setFixedIncome(income);
+      setFixedExpenses(expenses);
+    } catch (error) {
+      console.error('Erro ao carregar lançamentos fixos:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar balanço fixo",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalFixedIncome = fixedIncome.reduce((sum, t) => sum + t.amount, 0);
+  const totalFixedExpenses = Math.abs(fixedExpenses.reduce((sum, t) => sum + t.amount, 0));
+  const fixedBalance = totalFixedIncome - totalFixedExpenses;
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Balanço Fixo Mensal</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-2">
+            <div className="h-4 bg-muted rounded"></div>
+            <div className="h-4 bg-muted rounded"></div>
+            <div className="h-4 bg-muted rounded"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <DollarSign className="h-5 w-5" />
+          Balanço Fixo Mensal
+        </CardTitle>
+        <CardDescription>
+          Receitas e despesas fixas que se repetem mensalmente
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-success" />
+                Receitas Fixas
+              </h4>
+              <Badge variant="outline" className="text-success">
+                {totalFixedIncome.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL'
+                })}
+              </Badge>
+            </div>
+            <div className="space-y-2">
+              {fixedIncome.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Nenhuma receita fixa cadastrada
+                </p>
+              ) : (
+                fixedIncome.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{transaction.description}</p>
+                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-success">
+                      +{transaction.amount.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      })}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-destructive" />
+                Despesas Fixas
+              </h4>
+              <Badge variant="outline" className="text-destructive">
+                -{totalFixedExpenses.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL'
+                })}
+              </Badge>
+            </div>
+            <div className="space-y-2">
+              {fixedExpenses.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Nenhuma despesa fixa cadastrada
+                </p>
+              ) : (
+                fixedExpenses.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{transaction.description}</p>
+                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-destructive">
+                      {transaction.amount.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      })}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold">Balanço Mensal Fixo</h4>
+            <span className={cn(
+              "text-lg font-bold",
+              fixedBalance >= 0 ? "text-success" : "text-destructive"
+            )}>
+              {fixedBalance.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+              })}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {fixedBalance >= 0 
+              ? "Você terá este valor positivo mensalmente"
+              : "Você terá este déficit mensalmente"
+            }
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+----------------------------------------
+ENDOFFILE: src\components\dashboard\FixedBalanceCard.tsx
 
 STARTOFFILE: src\components\dashboard\MetricCard.tsx
 ----------------------------------------
@@ -1415,15 +1647,18 @@ ENDOFFILE: src\components\dialogs\AddInvestmentDialog.tsx
 STARTOFFILE: src\components\dialogs\AddTransactionDialog.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
+import { Plus, TrendingUp, TrendingDown } from "lucide-react";
+import { addMonths, format } from "date-fns";
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, TrendingUp, TrendingDown } from "lucide-react";
 
 interface Group {
   id: string;
@@ -1452,13 +1687,17 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     category: "",
     group_id: "personal",
     assigned_to: "self",
-    date: new Date().toISOString().split('T')[0]
+    date: format(new Date(), 'yyyy-MM-dd'),
+    notes: "",
+    is_recurring: false,
+    recurrence_count: "1",
+    is_fixed: false
   });
   const { toast } = useToast();
 
   const categories = type === "income" 
-    ? ["Salário", "Renda Extra", "Dividendos", "Vendas", "Outros"]
-    : ["Alimentação", "Transporte", "Saúde", "Educação", "Lazer", "Casa", "Vestuário", "Outros"];
+    ? ["Salário", "Freelance", "Investimentos", "Vendas", "Outros"]
+    : ["Alimentação", "Transporte", "Moradia", "Saúde", "Educação", "Lazer", "Outros"];
 
   useEffect(() => {
     if (open) {
@@ -1471,7 +1710,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Buscar grupos criados pelo usuário
       const { data: createdGroups, error: createdError } = await supabase
         .from('groups')
         .select('id, name')
@@ -1479,7 +1717,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
       if (createdError) throw createdError;
 
-      // Buscar grupos onde o usuário é membro
       const { data: memberGroups, error: memberError } = await supabase
         .from('group_members')
         .select(`
@@ -1497,7 +1734,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         return;
       }
 
-      // Combinar grupos
       const memberGroupsData = memberGroups?.map(mg => ({
         id: mg.groups.id,
         name: mg.groups.name
@@ -1516,7 +1752,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
   const loadGroupUsers = async (groupId: string) => {
     try {
-      // Primeiro buscar os membros do grupo
       const { data: membersData, error: membersError } = await supabase
         .from('group_members')
         .select('user_id')
@@ -1529,7 +1764,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         return;
       }
 
-      // Depois buscar os perfis dos usuários
       const userIds = membersData.map(m => m.user_id);
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
@@ -1578,23 +1812,44 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       if (!user) throw new Error("Usuário não autenticado");
 
       const amount = parseFloat(formData.amount);
-      const { error } = await supabase
-        .from('transactions')
-        .insert({
+      const recurrenceId = formData.is_recurring ? crypto.randomUUID() : null;
+      const recurrenceCount = formData.is_recurring ? parseInt(formData.recurrence_count) : 1;
+
+      const transactionsToInsert = [];
+
+      for (let i = 0; i < recurrenceCount; i++) {
+        const transactionDate = addMonths(new Date(formData.date), i);
+        
+        transactionsToInsert.push({
           user_id: (formData.assigned_to === "self" || !formData.assigned_to) ? user.id : formData.assigned_to,
           description: formData.description,
           amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
           type,
           category: formData.category,
           group_id: formData.group_id === "personal" ? null : formData.group_id,
-          date: formData.date
+          date: format(transactionDate, 'yyyy-MM-dd'),
+          is_recurring: formData.is_recurring,
+          is_fixed: formData.is_fixed,
+          recurrence_id: recurrenceId,
+          recurrence_count: recurrenceCount
         });
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert(transactionsToInsert);
 
       if (error) throw error;
 
+      const recurrenceText = formData.is_recurring 
+        ? ` (${recurrenceCount} ${recurrenceCount === 1 ? 'mês' : 'meses'})`
+        : '';
+
+      const fixedText = formData.is_fixed ? ' fixo' : '';
+
       toast({
         title: "Sucesso",
-        description: `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`
+        description: `${type === "income" ? "Receita" : "Despesa"}${fixedText} adicionada com sucesso!${recurrenceText}`
       });
 
       setFormData({
@@ -1603,7 +1858,11 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         category: "",
         group_id: "personal",
         assigned_to: "self",
-        date: new Date().toISOString().split('T')[0]
+        date: format(new Date(), 'yyyy-MM-dd'),
+        notes: "",
+        is_recurring: false,
+        recurrence_count: "1",
+        is_fixed: false
       });
       setOpen(false);
       onSuccess?.();
@@ -1622,13 +1881,16 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
   const defaultTrigger = (
     <Button variant="outline" className="h-20 flex flex-col gap-2">
       {type === "income" ? (
-        <TrendingUp className="h-6 w-6" />
+        <>
+          <TrendingUp className="h-6 w-6 text-success" />
+          <span className="text-sm">Receita</span>
+        </>
       ) : (
-        <TrendingDown className="h-6 w-6" />
+        <>
+          <TrendingDown className="h-6 w-6 text-destructive" />
+          <span className="text-sm">Despesa</span>
+        </>
       )}
-      <span className="text-sm">
-        {type === "income" ? "Nova Receita" : "Nova Despesa"}
-      </span>
     </Button>
   );
 
@@ -1637,18 +1899,23 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       <DialogTrigger asChild>
         {trigger || defaultTrigger}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {type === "income" ? (
-              <TrendingUp className="h-5 w-5 text-success" />
+              <>
+                <TrendingUp className="h-5 w-5 text-success" />
+                Nova Receita
+              </>
             ) : (
-              <TrendingDown className="h-5 w-5 text-destructive" />
+              <>
+                <TrendingDown className="h-5 w-5 text-destructive" />
+                Nova Despesa
+              </>
             )}
-            {type === "income" ? "Nova Receita" : "Nova Despesa"}
           </DialogTitle>
           <DialogDescription>
-            Adicione uma nova {type === "income" ? "receita" : "despesa"} ao seu controle financeiro.
+            Adicione uma nova {type === "income" ? "receita" : "despesa"} à sua carteira.
           </DialogDescription>
         </DialogHeader>
 
@@ -1657,69 +1924,77 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             <Label htmlFor="description">Descrição *</Label>
             <Input
               id="description"
-              placeholder="Digite a descrição..."
+              placeholder="Ex: Aluguel"
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="amount">Valor *</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor *</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                placeholder="0,00"
+                value={formData.amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date">Data *</Label>
+              <Input
+                id="date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="category">Categoria *</Label>
             <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
-              <SelectTrigger>
+              <SelectTrigger id="category">
                 <SelectValue placeholder="Selecione uma categoria" />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="group">Grupo (opcional)</Label>
+            <Label htmlFor="group">Grupo</Label>
             <Select value={formData.group_id} onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um grupo (opcional)" />
+              <SelectTrigger id="group">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="personal">Pessoal</SelectItem>
                 {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
+                  <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {formData.group_id && groupUsers.length > 0 && (
+          {formData.group_id !== "personal" && groupUsers.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="assigned_to">Atribuir a usuário (opcional)</Label>
+              <Label htmlFor="assigned_to">Atribuir para</Label>
               <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um usuário (opcional)" />
+                <SelectTrigger id="assigned_to">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="self">Eu mesmo</SelectItem>
                   {groupUsers.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
-                      {user.full_name || 'Usuário'}
+                      {user.full_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1727,13 +2002,61 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </div>
           )}
 
+          <div className="space-y-4 pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="is_fixed">Lançamento Fixo</Label>
+                <p className="text-xs text-muted-foreground">
+                  Aparecerá no balanço fixo mensal
+                </p>
+              </div>
+              <Switch
+                id="is_fixed"
+                checked={formData.is_fixed}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_fixed: checked }))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="is_recurring">Lançamento Recorrente</Label>
+                <p className="text-xs text-muted-foreground">
+                  Repetir por vários meses
+                </p>
+              </div>
+              <Switch
+                id="is_recurring"
+                checked={formData.is_recurring}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_recurring: checked }))}
+              />
+            </div>
+
+            {formData.is_recurring && (
+              <div className="space-y-2 pl-4 border-l-2">
+                <Label htmlFor="recurrence_count">Repetir por quantos meses? *</Label>
+                <Input
+                  id="recurrence_count"
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={formData.recurrence_count}
+                  onChange={(e) => setFormData(prev => ({ ...prev, recurrence_count: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Serão criados {formData.recurrence_count} lançamento(s) mensais
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="date">Data</Label>
-            <Input
-              id="date"
-              type="date"
-              value={formData.date}
-              onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+            <Label htmlFor="notes">Observações</Label>
+            <Textarea
+              id="notes"
+              placeholder="Adicione observações..."
+              value={formData.notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              rows={3}
             />
           </div>
 
@@ -1761,6 +2084,711 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 };
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddTransactionDialog.tsx
+
+STARTOFFILE: src\components\dialogs\EditGoalDialog.tsx
+----------------------------------------
+import { useState, useEffect } from "react";
+import { Target } from "lucide-react";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+interface InvestmentGoal {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  color: string;
+  description?: string;
+  target_date?: string;
+}
+
+interface EditGoalDialogProps {
+  goal: InvestmentGoal | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDialogProps) => {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    target_amount: "",
+    current_amount: "",
+    color: "blue",
+    description: "",
+    target_date: ""
+  });
+  const { toast } = useToast();
+
+  const colors = [
+    { value: "blue", label: "Azul" },
+    { value: "green", label: "Verde" },
+    { value: "purple", label: "Roxo" },
+    { value: "orange", label: "Laranja" },
+    { value: "red", label: "Vermelho" },
+    { value: "pink", label: "Rosa" }
+  ];
+
+  useEffect(() => {
+    if (goal) {
+      setFormData({
+        name: goal.name,
+        target_amount: goal.target_amount.toString(),
+        current_amount: goal.current_amount.toString(),
+        color: goal.color || "blue",
+        description: goal.description || "",
+        target_date: goal.target_date || ""
+      });
+    }
+  }, [goal]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.name || !formData.target_amount || !goal) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const targetAmount = parseFloat(formData.target_amount);
+      const currentAmount = parseFloat(formData.current_amount);
+
+      const { error } = await supabase
+        .from('investment_goals')
+        .update({
+          name: formData.name,
+          target_amount: targetAmount,
+          current_amount: currentAmount,
+          color: formData.color,
+          description: formData.description || null,
+          target_date: formData.target_date || null
+        })
+        .eq('id', goal.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Meta atualizada com sucesso!"
+      });
+
+      onClose();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Erro ao atualizar meta:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar a meta. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            Editar Meta de Investimento
+          </DialogTitle>
+          <DialogDescription>
+            Atualize as informações da sua meta financeira.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-name">Nome da Meta *</Label>
+            <Input
+              id="edit-name"
+              placeholder="Ex: Casa Própria"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-target_amount">Valor Alvo *</Label>
+            <Input
+              id="edit-target_amount"
+              type="number"
+              step="0.01"
+              placeholder="0,00"
+              value={formData.target_amount}
+              onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-current_amount">Valor Atual *</Label>
+            <Input
+              id="edit-current_amount"
+              type="number"
+              step="0.01"
+              placeholder="0,00"
+              value={formData.current_amount}
+              onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-color">Cor</Label>
+            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+              <SelectTrigger id="edit-color">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {colors.map((color) => (
+                  <SelectItem key={color.value} value={color.value}>
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: color.value }}
+                      />
+                      {color.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-description">Descrição (opcional)</Label>
+            <Textarea
+              id="edit-description"
+              placeholder="Adicione detalhes sobre esta meta..."
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-target_date">Data Alvo (opcional)</Label>
+            <Input
+              id="edit-target_date"
+              type="date"
+              value={formData.target_date}
+              onChange={(e) => setFormData(prev => ({ ...prev, target_date: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={onClose}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={loading}
+            >
+              {loading ? "Salvando..." : "Salvar Alterações"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+----------------------------------------
+ENDOFFILE: src\components\dialogs\EditGoalDialog.tsx
+
+STARTOFFILE: src\components\dialogs\EditGroupDialog.tsx
+----------------------------------------
+import { useState, useEffect } from "react";
+import { Users, UserPlus, UserMinus, Shield, X } from "lucide-react";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+interface GroupMember {
+  id: string;
+  user_id: string;
+  is_admin: boolean;
+  profiles?: {
+    full_name: string | null;
+  } | null;
+}
+
+interface EditGroupDialogProps {
+  groupId: string | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGroupDialogProps) => {
+  const [loading, setLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isGroupAdmin, setIsGroupAdmin] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    color: "blue"
+  });
+  const [members, setMembers] = useState<GroupMember[]>([]);
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const { toast } = useToast();
+
+  const colors = [
+    { value: "blue", label: "Azul", class: "bg-blue-500" },
+    { value: "green", label: "Verde", class: "bg-green-500" },
+    { value: "purple", label: "Roxo", class: "bg-purple-500" },
+    { value: "red", label: "Vermelho", class: "bg-red-500" },
+    { value: "yellow", label: "Amarelo", class: "bg-yellow-500" },
+    { value: "pink", label: "Rosa", class: "bg-pink-500" },
+    { value: "orange", label: "Laranja", class: "bg-orange-500" },
+    { value: "indigo", label: "Índigo", class: "bg-indigo-500" }
+  ];
+
+  useEffect(() => {
+    if (groupId && isOpen) {
+      loadGroupData();
+    }
+  }, [groupId, isOpen]);
+
+  const loadGroupData = async () => {
+    if (!groupId) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setCurrentUserId(user.id);
+
+      const { data: groupData, error: groupError } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('id', groupId)
+        .single();
+
+      if (groupError) throw groupError;
+
+      setFormData({
+        name: groupData.name,
+        description: groupData.description || "",
+        color: groupData.color || "blue"
+      });
+
+      const { data: membersData, error: membersError } = await supabase
+        .from('group_members')
+        .select('id, user_id, is_admin')
+        .eq('group_id', groupId);
+
+      if (membersError) throw membersError;
+
+      const membersWithProfiles = await Promise.all(
+        (membersData || []).map(async (member) => {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('user_id', member.user_id)
+            .maybeSingle();
+
+          return {
+            ...member,
+            profiles: profile
+          };
+        })
+      );
+
+      setMembers(membersWithProfiles);
+
+      const currentMember = membersData?.find(m => m.user_id === user.id);
+      setIsGroupAdmin(currentMember?.is_admin || groupData.created_by === user.id);
+
+    } catch (error) {
+      console.error('Erro ao carregar dados do grupo:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar dados do grupo",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.name || !groupId) {
+      toast({
+        title: "Erro",
+        description: "O nome do grupo é obrigatório",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isGroupAdmin) {
+      toast({
+        title: "Erro",
+        description: "Apenas administradores podem editar o grupo",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from('groups')
+        .update({
+          name: formData.name,
+          description: formData.description || null,
+          color: formData.color
+        })
+        .eq('id', groupId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Grupo atualizado com sucesso!"
+      });
+
+      onClose();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Erro ao atualizar grupo:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar o grupo. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!newMemberEmail.trim() || !groupId) return;
+
+    if (!isGroupAdmin) {
+      toast({
+        title: "Erro",
+        description: "Apenas administradores podem adicionar membros",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .ilike('full_name', `%${newMemberEmail}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (profileError || !profileData) {
+        toast({
+          title: "Erro",
+          description: "Usuário não encontrado",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const memberExists = members.some(m => m.user_id === profileData.user_id);
+      if (memberExists) {
+        toast({
+          title: "Erro",
+          description: "Este usuário já é membro do grupo",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from('group_members')
+        .insert({
+          group_id: groupId,
+          user_id: profileData.user_id,
+          is_admin: false
+        });
+
+      if (insertError) throw insertError;
+
+      toast({
+        title: "Sucesso",
+        description: "Membro adicionado com sucesso!"
+      });
+
+      setNewMemberEmail("");
+      await loadGroupData();
+    } catch (error) {
+      console.error('Erro ao adicionar membro:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao adicionar membro. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string, userId: string) => {
+    if (!isGroupAdmin) {
+      toast({
+        title: "Erro",
+        description: "Apenas administradores podem remover membros",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (userId === currentUserId) {
+      toast({
+        title: "Erro",
+        description: "Você não pode remover a si mesmo do grupo",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .delete()
+        .eq('id', memberId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Membro removido com sucesso!"
+      });
+
+      await loadGroupData();
+    } catch (error) {
+      console.error('Erro ao remover membro:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover membro. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleToggleAdmin = async (memberId: string, currentIsAdmin: boolean) => {
+    if (!isGroupAdmin) {
+      toast({
+        title: "Erro",
+        description: "Apenas administradores podem alterar permissões",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .update({ is_admin: !currentIsAdmin })
+        .eq('id', memberId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: `Permissão ${!currentIsAdmin ? 'concedida' : 'removida'} com sucesso!`
+      });
+
+      await loadGroupData();
+    } catch (error) {
+      console.error('Erro ao alterar permissão:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao alterar permissão. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary" />
+            Editar Grupo
+          </DialogTitle>
+          <DialogDescription>
+            Gerencie as informações e membros do grupo.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-group-name">Nome do Grupo *</Label>
+              <Input
+                id="edit-group-name"
+                placeholder="Ex: Família"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                disabled={!isGroupAdmin}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-group-description">Descrição</Label>
+              <Textarea
+                id="edit-group-description"
+                placeholder="Adicione uma descrição para o grupo..."
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                disabled={!isGroupAdmin}
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-group-color">Cor</Label>
+              <Select 
+                value={formData.color} 
+                onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}
+                disabled={!isGroupAdmin}
+              >
+                <SelectTrigger id="edit-group-color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded-full ${color.class}`} />
+                        {color.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label>Membros do Grupo</Label>
+              <Badge variant="secondary">{members.length} membros</Badge>
+            </div>
+
+            {isGroupAdmin && (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Buscar usuário por nome..."
+                  value={newMemberEmail}
+                  onChange={(e) => setNewMemberEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddMember())}
+                />
+                <Button type="button" onClick={handleAddMember} variant="outline">
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {members.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between p-3 rounded-lg border border-border"
+                >
+                  <div className="flex items-center gap-3">
+                    <Avatar>
+                      <AvatarFallback>
+                        {(member.profiles?.full_name || 'U').charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">
+                        {member.profiles?.full_name || 'Usuário'}
+                      </p>
+                      {member.is_admin && (
+                        <Badge variant="outline" className="text-xs">
+                          <Shield className="h-3 w-3 mr-1" />
+                          Administrador
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {isGroupAdmin && member.user_id !== currentUserId && (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={member.is_admin}
+                        onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveMember(member.id, member.user_id)}
+                      >
+                        <UserMinus className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={onClose}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={loading || !isGroupAdmin}
+            >
+              {loading ? "Salvando..." : "Salvar Alterações"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+----------------------------------------
+ENDOFFILE: src\components\dialogs\EditGroupDialog.tsx
 
 STARTOFFILE: src\components\dialogs\InvestmentDetailsModal.tsx
 ----------------------------------------
@@ -2470,20 +3498,47 @@ ENDOFFILE: src\components\groups\GroupDetailsModal.tsx
 
 STARTOFFILE: src\components\layout\DashboardLayout.tsx
 ----------------------------------------
-import { ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
+import { ReactNode, useState } from "react";
+import { Menu } from "lucide-react";
+
+import { Sidebar } from "@/components/layout/Sidebar";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
+    <div className="flex min-h-screen w-full bg-background">
+      <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 md:z-50">
+        <Sidebar />
+      </aside>
+
+      <div className="flex flex-col flex-1 md:pl-64">
+        <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-64">
+              <Sidebar onNavigate={() => setSidebarOpen(false)} />
+            </SheetContent>
+          </Sheet>
+          <h1 className="text-lg font-semibold">FinanceAgent</h1>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <div className="h-full">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };
@@ -2493,18 +3548,15 @@ ENDOFFILE: src\components\layout\DashboardLayout.tsx
 STARTOFFILE: src\components\layout\Sidebar.tsx
 ----------------------------------------
 import { NavLink, useNavigate } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  TrendingUp, 
-  ArrowUpDown, 
-  Users, 
-  PlusCircle,
-  LogOut,
-  DollarSign
-} from "lucide-react";
+import { LayoutDashboard, TrendingUp, ArrowUpDown, Users, PlusCircle, LogOut, DollarSign } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
+
+interface SidebarProps {
+  onNavigate?: () => void;
+}
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -2514,7 +3566,7 @@ const navigation = [
   { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
 ];
 
-export const Sidebar = () => {
+export const Sidebar = ({ onNavigate }: SidebarProps) => {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
 
@@ -2522,48 +3574,57 @@ export const Sidebar = () => {
     await signOut();
     navigate("/auth");
   };
+
+  const handleNavClick = () => {
+    if (onNavigate) {
+      onNavigate();
+    }
+  };
+
   return (
-    <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
+    <div className="flex h-full w-full flex-col bg-card border-r border-border">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-2">
           <DollarSign className="h-8 w-8 text-primary" />
           <h1 className="text-xl font-bold text-foreground">FinanceAgent</h1>
         </div>
         {user && (
-          <p className="text-sm text-muted-foreground">Olá, {user.email}</p>
+          <p className="text-sm text-muted-foreground truncate">Olá, {user.email}</p>
         )}
       </div>
       
       <Separator />
       
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 overflow-y-auto p-4 space-y-2">
         {navigation.map((item) => (
           <NavLink
             key={item.name}
             to={item.href}
+            onClick={handleNavClick}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`
             }
           >
             <item.icon className="h-5 w-5" />
-            {item.name}
+            <span>{item.name}</span>
           </NavLink>
         ))}
       </nav>
-      
+
+      <Separator />
+
       <div className="p-4">
-        <Separator className="mb-4" />
         <Button
-          variant="outline"
-          className="w-full justify-start gap-2"
+          variant="ghost"
+          className="w-full justify-start gap-3"
           onClick={handleLogout}
         >
-          <LogOut className="h-4 w-4" />
-          Sair
+          <LogOut className="h-5 w-5" />
+          <span>Sair</span>
         </Button>
       </div>
     </div>
@@ -7915,8 +8976,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
   }
@@ -7926,18 +8985,21 @@ export type Database = {
         Row: {
           group_id: string
           id: string
+          is_admin: boolean
           joined_at: string
           user_id: string
         }
         Insert: {
           group_id: string
           id?: string
+          is_admin?: boolean
           joined_at?: string
           user_id: string
         }
         Update: {
           group_id?: string
           id?: string
+          is_admin?: boolean
           joined_at?: string
           user_id?: string
         }
@@ -8280,13 +9342,6 @@ export type CompositeTypes<
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
-
-export const Constants = {
-  public: {
-    Enums: {},
-  },
-} as const
-
 ----------------------------------------
 ENDOFFILE: src\integrations\supabase\types.ts
 
@@ -8613,6 +9668,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { startOfMonth, endOfMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -8728,6 +9784,7 @@ const Dashboard = () => {
                 change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
               />
+
             </>
           )}
         </div>
@@ -8735,17 +9792,7 @@ const Dashboard = () => {
         {/* Charts and Recent Transactions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart Placeholder */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumo Mensal</CardTitle>
-              <CardDescription>Evolução das receitas e despesas nos últimos 6 meses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] flex items-center justify-center bg-muted/30 rounded-lg">
-                <p className="text-muted-foreground">Gráfico será implementado em breve</p>
-              </div>
-            </CardContent>
-          </Card>
+              <FixedBalanceCard />
 
           {/* Recent Transactions */}
           <TransactionsList />
@@ -8782,15 +9829,17 @@ ENDOFFILE: src\pages\Dashboard.tsx
 STARTOFFILE: src\pages\Groups.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
+import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "lucide-react";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
+import { EditGroupDialog } from "@/components/dialogs/EditGroupDialog";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { GroupDetailsModal } from "@/components/groups/GroupDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -8819,6 +9868,8 @@ const Groups = () => {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string } | null>(null);
+  const [editGroupId, setEditGroupId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchGroups = async () => {
@@ -8828,7 +9879,6 @@ const Groups = () => {
       
       setCurrentUserId(user.id);
 
-      // Buscar grupos onde o usuário é criador
       const { data: createdGroups, error: createdError } = await supabase
         .from('groups')
         .select('*')
@@ -8836,7 +9886,6 @@ const Groups = () => {
 
       if (createdError) throw createdError;
 
-      // Buscar grupos onde o usuário é membro
       const { data: memberGroups, error: memberError } = await supabase
         .from('group_members')
         .select(`
@@ -8846,21 +9895,17 @@ const Groups = () => {
 
       if (memberError) throw memberError;
 
-      // Combinar grupos
       const allGroups = [
         ...(createdGroups || []),
         ...(memberGroups?.map(mg => mg.groups).filter(Boolean) || [])
       ];
 
-      // Remover duplicatas
       const uniqueGroups = allGroups.filter((group, index, arr) => 
         arr.findIndex(g => g.id === group.id) === index
       );
 
-      // Para cada grupo, buscar membros e transações
       const groupsWithStats = await Promise.all(
         uniqueGroups.map(async (group) => {
-          // Buscar membros do grupo (simples, sem join)
           const { data: members, error: membersError } = await supabase
             .from('group_members')
             .select('user_id, joined_at')
@@ -8868,7 +9913,6 @@ const Groups = () => {
 
           if (membersError) throw membersError;
 
-          // Buscar perfis dos membros separadamente
           const membersWithProfiles = await Promise.all(
             (members || []).map(async (member) => {
               const { data: profile } = await supabase
@@ -8884,7 +9928,6 @@ const Groups = () => {
             })
           );
 
-          // Buscar transações do grupo
           const { data: transactions, error: transError } = await supabase
             .from('transactions')
             .select('amount, type')
@@ -8900,7 +9943,6 @@ const Groups = () => {
             ?.filter(t => t.type === 'expense')
             .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-          // Buscar última atividade
           const { data: lastTransaction } = await supabase
             .from('transactions')
             .select('created_at')
@@ -8936,283 +9978,248 @@ const Groups = () => {
     fetchGroups();
   }, []);
 
-  const getColorClass = (color: string) => {
-    const colorMap: Record<string, string> = {
-      blue: "bg-blue-500",
-      green: "bg-green-500",
-      purple: "bg-purple-500",
-      red: "bg-red-500",
-      yellow: "bg-yellow-500",
-      pink: "bg-pink-500",
-      orange: "bg-orange-500",
-      indigo: "bg-indigo-500"
-    };
-    return colorMap[color] || "bg-blue-500";
+  const handleEditGroup = (groupId: string) => {
+    setEditGroupId(groupId);
+    setEditDialogOpen(true);
   };
 
-  const isGroupAdmin = (group: Group, currentUserId: string) => {
-    return group.created_by === currentUserId;
+  const handleEditClose = () => {
+    setEditDialogOpen(false);
+    setEditGroupId(null);
   };
 
   if (loading) {
     return (
       <DashboardLayout>
         <div className="p-6 space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">Grupos</h1>
-              <p className="text-muted-foreground">
-                Gerencie despesas compartilhadas com outras pessoas
-              </p>
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-muted rounded w-1/4"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1,2,3].map(i => (
+                <div key={i} className="h-48 bg-muted rounded"></div>
+              ))}
             </div>
-          <AddGroupDialog onGroupCreated={fetchGroups} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="animate-pulse">
-                <CardContent className="p-6">
-                  <div className="h-20 bg-muted rounded"></div>
-                </CardContent>
-              </Card>
-            ))}
           </div>
         </div>
       </DashboardLayout>
     );
   }
+
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Grupos</h1>
-            <p className="text-muted-foreground">
-              Gerencie despesas compartilhadas com outras pessoas
-            </p>
+      <div className="h-full overflow-y-auto">
+        <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Grupos</h1>
+              <p className="text-sm md:text-base text-muted-foreground">
+                Gerencie e compartilhe despesas com seus grupos
+              </p>
+            </div>
+            <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
-          <AddGroupDialog onGroupCreated={fetchGroups} />
-        </div>
 
-        {/* Groups Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {groups.map((group) => {
-            const isAdmin = currentUserId ? isGroupAdmin(group, currentUserId) : false;
-            
-            return (
-              <Card key={group.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-full ${getColorClass(group.color)} flex items-center justify-center`}>
-                        <Users className="h-6 w-6 text-white" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {groups.map((group) => {
+              const balance = group.totalIncome + group.totalExpenses;
+              
+              return (
+                <Card key={group.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-12 h-12 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: group.color || '#3b82f6' }}
+                        >
+                          <Users className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
                           <CardTitle className="text-lg">{group.name}</CardTitle>
-                          {isAdmin && (
-                            <Badge variant="outline" className="text-xs">Admin</Badge>
+                          {group.description && (
+                            <CardDescription className="text-xs mt-1">
+                              {group.description}
+                            </CardDescription>
                           )}
                         </div>
-                        <CardDescription className="text-sm">
-                          {group.description || "Sem descrição"}
-                        </CardDescription>
                       </div>
-                    </div>
-                    {isAdmin && (
-                      <Button variant="ghost" size="sm">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditGroup(group.id)}
+                      >
                         <Settings className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="space-y-4">
-                  {/* Members */}
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-2">Membros</p>
-                    <div className="flex items-center gap-2">
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Membros</span>
                       <div className="flex -space-x-2">
-                        {group.members.slice(0, 3).map((member, index) => (
-                          <Avatar key={index} className="w-8 h-8 border-2 border-background">
+                        {group.members.slice(0, 3).map((member, idx) => (
+                          <Avatar key={idx} className="h-8 w-8 border-2 border-background">
                             <AvatarFallback className="text-xs">
-                              {member.profiles?.full_name 
-                                ? member.profiles.full_name.slice(0, 2).toUpperCase()
-                                : "??"}
+                              {(member.profiles?.full_name || 'U').charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         ))}
                         {group.members.length > 3 && (
-                          <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
-                            <span className="text-xs text-muted-foreground">
-                              +{group.members.length - 3}
-                            </span>
+                          <div className="h-8 w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
+                            <span className="text-xs font-medium">+{group.members.length - 3}</span>
                           </div>
                         )}
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        {group.members.length} membro{group.members.length !== 1 ? 's' : ''}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {/* Financial Summary */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-success" />
-                        <span className="text-sm text-muted-foreground">Receitas</span>
-                      </div>
-                      <span className="font-medium text-success">
-                        {group.totalIncome.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingDown className="h-4 w-4 text-destructive" />
-                        <span className="text-sm text-muted-foreground">Despesas</span>
-                      </div>
-                      <span className="font-medium text-destructive">
-                        {Math.abs(group.totalExpenses).toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })}
-                      </span>
                     </div>
 
-                    <div className="border-t pt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Saldo do Grupo</span>
-                        <span className={`font-semibold ${
-                          (group.totalIncome + group.totalExpenses) >= 0 
-                            ? "text-success" 
-                            : "text-destructive"
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <TrendingUp className="h-4 w-4 text-success" />
+                          Receitas
+                        </span>
+                        <span className="font-medium text-success">
+                          {group.totalIncome.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <TrendingDown className="h-4 w-4 text-destructive" />
+                          Despesas
+                        </span>
+                        <span className="font-medium text-destructive">
+                          {group.totalExpenses.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <span className="text-sm font-medium">Saldo</span>
+                        <span className={`font-bold ${
+                          balance >= 0 ? 'text-success' : 'text-destructive'
                         }`}>
-                          {(group.totalIncome + group.totalExpenses).toLocaleString('pt-BR', {
+                          {balance.toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL'
                           })}
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Last Activity */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Última atividade:</span>
-                    <span>{new Date(group.lastActivity || group.created_at).toLocaleDateString('pt-BR')}</span>
-                  </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Detalhes
+                      </Button>
+                      <AddTransactionDialog
+                        type="expense"
+                        trigger={
+                          <Button variant="outline" className="flex-1">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Despesa
+                          </Button>
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex-1"
-                      onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Ver Detalhes
+          {groups.length === 0 && (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
+                <p className="text-muted-foreground mb-4">
+                  Crie seu primeiro grupo para começar a compartilhar despesas
+                </p>
+                <AddGroupDialog 
+                  onGroupCreated={fetchGroups}
+                  trigger={
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Criar Primeiro Grupo
                     </Button>
-                    <AddTransactionDialog 
-                      type="expense" 
-                      trigger={
-                        <Button size="sm" className="flex-1">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Novo Lançamento
-                        </Button>
-                      } 
-                    />
+                  } 
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total de Grupos</p>
+                    <p className="text-2xl font-bold">{groups.length}</p>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Empty State */}
-        {groups.length === 0 && (
-          <Card className="py-12">
-            <CardContent className="text-center">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
-              <p className="text-muted-foreground mb-4">
-                Crie seu primeiro grupo para começar a compartilhar despesas
-              </p>
-              <AddGroupDialog 
-                onGroupCreated={fetchGroups}
-                trigger={
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Criar Primeiro Grupo
-                  </Button>
-                } 
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total de Grupos</p>
-                  <p className="text-2xl font-bold">{groups.length}</p>
+                  <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <Users className="h-8 w-8 text-muted-foreground" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Despesas em Grupos</p>
-                  <p className="text-2xl font-bold text-destructive">
-                    R$ {Math.abs(groups.reduce((sum, group) => sum + group.totalExpenses, 0))
-                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total de Membros</p>
+                    <p className="text-2xl font-bold">
+                      {groups.reduce((sum, g) => sum + g.members.length, 0)}
+                    </p>
+                  </div>
+                  <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <TrendingDown className="h-8 w-8 text-destructive" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Receitas em Grupos</p>
-                  <p className="text-2xl font-bold text-success">
-                    R$ {groups.reduce((sum, group) => sum + group.totalIncome, 0)
-                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Saldo Total</p>
+                    <p className="text-2xl font-bold">
+                      {groups.reduce((sum, g) => sum + g.totalIncome + g.totalExpenses, 0).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      })}
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <TrendingUp className="h-8 w-8 text-success" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-        </div>
+      </div>
 
-        <GroupDetailsModal
-          isOpen={selectedGroup !== null}
-          onClose={() => setSelectedGroup(null)}
-          groupId={selectedGroup?.id || ""}
-          groupName={selectedGroup?.name || ""}
-        />
-      </DashboardLayout>
-    );
-  };
-  
-  export default Groups;
+      <GroupDetailsModal
+        isOpen={!!selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+        groupId={selectedGroup?.id || ""}
+        groupName={selectedGroup?.name || ""}
+      />
+
+      <EditGroupDialog
+        groupId={editGroupId}
+        isOpen={editDialogOpen}
+        onClose={handleEditClose}
+        onSuccess={fetchGroups}
+      />
+    </DashboardLayout>
+  );
+};
+
+export default Groups;
 ----------------------------------------
 ENDOFFILE: src\pages\Groups.tsx
 
@@ -9362,17 +10369,20 @@ ENDOFFILE: src\pages\Index.tsx
 STARTOFFILE: src\pages\Investments.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign, Trash2, Edit } from "lucide-react";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { AddGoalDialog } from "@/components/dialogs/AddGoalDialog";
+import { EditGoalDialog } from "@/components/dialogs/EditGoalDialog";
 import { InvestmentDetailsModal } from "@/components/dialogs/InvestmentDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Investment {
@@ -9401,6 +10411,12 @@ const Investments = () => {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [investmentToDelete, setInvestmentToDelete] = useState<string | null>(null);
+  const [deleteGoalDialogOpen, setDeleteGoalDialogOpen] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState<string | null>(null);
+  const [editGoalDialogOpen, setEditGoalDialogOpen] = useState(false);
+  const [goalToEdit, setGoalToEdit] = useState<InvestmentGoal | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -9450,11 +10466,90 @@ const Investments = () => {
     }
   };
 
+  const handleDeleteClick = (investmentId: string) => {
+    setInvestmentToDelete(investmentId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!investmentToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('investments')
+        .delete()
+        .eq('id', investmentToDelete);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Investimento removido com sucesso!"
+      });
+
+      await loadInvestments();
+    } catch (error) {
+      console.error('Erro ao remover investimento:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover o investimento. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setInvestmentToDelete(null);
+    }
+  };
+
+  const handleDeleteGoalClick = (goalId: string) => {
+    setGoalToDelete(goalId);
+    setDeleteGoalDialogOpen(true);
+  };
+
+  const handleDeleteGoalConfirm = async () => {
+    if (!goalToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('investment_goals')
+        .delete()
+        .eq('id', goalToDelete);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Meta removida com sucesso!"
+      });
+
+      await loadGoals();
+    } catch (error) {
+      console.error('Erro ao remover meta:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover a meta. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setDeleteGoalDialogOpen(false);
+      setGoalToDelete(null);
+    }
+  };
+
+  const handleEditGoalClick = (goal: InvestmentGoal) => {
+    setGoalToEdit(goal);
+    setEditGoalDialogOpen(true);
+  };
+
+  const handleEditGoalClose = () => {
+    setEditGoalDialogOpen(false);
+    setGoalToEdit(null);
+  };
+
   const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrentValue = investments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
 
-  // Get unique investment types and their data
   const investmentTypes = [...new Set(investments.map(inv => inv.type))];
   
   const getTypeData = (type: string) => {
@@ -9489,7 +10584,6 @@ const Investments = () => {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
@@ -9511,7 +10605,6 @@ const Investments = () => {
           </div>
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -9535,14 +10628,14 @@ const Investments = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Valor Atual</p>
-                  <p className="text-2xl font-bold text-primary">
+                  <p className="text-2xl font-bold">
                     {totalCurrentValue.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL'
                     })}
                   </p>
                 </div>
-                <PieChart className="h-8 w-8 text-primary" />
+                <TrendingUp className="h-8 w-8 text-success" />
               </div>
             </CardContent>
           </Card>
@@ -9556,7 +10649,7 @@ const Investments = () => {
                     "text-2xl font-bold",
                     totalReturn >= 0 ? "text-success" : "text-destructive"
                   )}>
-                    {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(2)}%
+                    {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
                   </p>
                 </div>
                 {totalReturn >= 0 ? (
@@ -9575,7 +10668,7 @@ const Investments = () => {
                   <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
                   <p className={cn(
                     "text-2xl font-bold",
-                    totalReturn >= 0 ? "text-success" : "text-destructive"
+                    totalCurrentValue - totalInvested >= 0 ? "text-success" : "text-destructive"
                   )}>
                     {(totalCurrentValue - totalInvested).toLocaleString('pt-BR', {
                       style: 'currency',
@@ -9589,163 +10682,12 @@ const Investments = () => {
           </Card>
         </div>
 
-        {/* Investments List */}
-        {investments.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Minha Carteira</CardTitle>
-              <CardDescription>
-                Detalhamento dos seus investimentos atuais
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {investments.map((investment) => {
-                  const investmentReturn = investment.amount > 0 
-                    ? ((investment.current_value - investment.amount) / investment.amount) * 100 
-                    : 0;
-                  const allocation = totalCurrentValue > 0 
-                    ? (investment.current_value / totalCurrentValue) * 100 
-                    : 0;
-
-                  return (
-                    <div
-                      key={investment.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 bg-primary/10 rounded-full">
-                          <TrendingUp className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">{investment.name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="secondary" className="text-xs">
-                              {investment.type}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {allocation.toFixed(1)}% da carteira
-                            </span>
-                            {investment.maturity_date && (
-                              <span className="text-xs text-muted-foreground">
-                                Venc: {new Date(investment.maturity_date).toLocaleDateString('pt-BR')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="flex items-center gap-4">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Investido</p>
-                            <p className="font-medium">
-                              {investment.amount.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Atual</p>
-                            <p className="font-medium">
-                              {investment.current_value.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Retorno</p>
-                            <p className={cn(
-                              "font-semibold",
-                              investmentReturn >= 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {investmentReturn >= 0 ? "+" : ""}{investmentReturn.toFixed(2)}%
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Investment Goals */}
-        {goals.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Metas de Investimento
-              </CardTitle>
-              <CardDescription>
-                Acompanhe o progresso das suas metas financeiras
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {goals.map((goal) => {
-                  const progress = goal.target_amount > 0 
-                    ? (goal.current_amount / goal.target_amount) * 100 
-                    : 0;
-
-                  return (
-                    <div key={goal.id} className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">{goal.name}</h4>
-                        <Badge variant="outline" className="text-xs">
-                          {progress.toFixed(1)}%
-                        </Badge>
-                      </div>
-                      
-                      <Progress value={progress} className="h-2" />
-                      
-                      <div className="flex justify-between text-sm text-muted-foreground">
-                        <span>
-                          {goal.current_amount.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
-                          })}
-                        </span>
-                        <span>
-                          {goal.target_amount.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
-                          })}
-                        </span>
-                      </div>
-                      
-                      <div className="text-xs text-muted-foreground">
-                        Faltam {(goal.target_amount - goal.current_amount).toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })} para atingir a meta
-                      </div>
-
-                      {goal.target_date && (
-                        <div className="text-xs text-muted-foreground">
-                          Meta para: {new Date(goal.target_date).toLocaleDateString('pt-BR')}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Asset Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
               <CardTitle>Distribuição por Tipo</CardTitle>
               <CardDescription>
-                Como seus investimentos estão distribuídos (clique para ver detalhes)
+                Composição da sua carteira de investimentos
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -9786,49 +10728,213 @@ const Investments = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Performance Mensal</CardTitle>
+              <CardTitle>Metas de Investimento</CardTitle>
               <CardDescription>
-                Evolução da carteira nos últimos meses
+                Progresso das suas metas financeiras
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[200px] flex items-center justify-center bg-muted/30 rounded-lg">
-                <p className="text-muted-foreground">Gráfico de performance será implementado</p>
+              <div className="space-y-4">
+                {goals.length > 0 ? (
+                  goals.map((goal) => {
+                    const progress = (goal.current_amount / goal.target_amount) * 100;
+                    
+                    return (
+                      <div key={goal.id} className="space-y-2 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: goal.color || '#3b82f6' }}
+                            />
+                            <span className="font-medium">{goal.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">
+                              {goal.current_amount.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                              })} / {goal.target_amount.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                              })}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleEditGoalClick(goal)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleDeleteGoalClick(goal.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                        <Progress value={progress} className="h-2" />
+                        <p className="text-xs text-muted-foreground">
+                          {progress.toFixed(1)}% concluído
+                        </p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Target className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma meta cadastrada ainda.</p>
+                    <p className="text-sm">Crie sua primeira meta de investimento.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Empty State */}
-        {investments.length === 0 && (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <TrendingUp className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
-              <p className="text-muted-foreground mb-4">
-                Comece a construir sua carteira de investimentos adicionando seu primeiro investimento.
-              </p>
-              <AddInvestmentDialog 
-                trigger={
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Primeiro Investimento
-                  </Button>
-                }
-                onSuccess={loadInvestments}
-              />
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Todos os Investimentos</CardTitle>
+            <CardDescription>
+              Lista completa dos seus investimentos
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {investments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
+                  <p className="mb-4">
+                    Comece a construir sua carteira de investimentos adicionando seu primeiro investimento.
+                  </p>
+                  <AddInvestmentDialog onSuccess={loadInvestments} />
+                </div>
+              ) : (
+                investments.map((investment) => {
+                  const returnValue = investment.current_value - investment.amount;
+                  const returnPercentage = (returnValue / investment.amount) * 100;
 
-        {/* Investment Details Modal */}
-        <InvestmentDetailsModal
-          open={modalOpen}
-          onOpenChange={setModalOpen}
-          type={selectedType}
-          investments={selectedType ? getTypeData(selectedType).typeInvestments : []}
-        />
+                  return (
+                    <div
+                      key={investment.id}
+                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors group"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="font-medium">{investment.name}</h3>
+                          <Badge variant="outline">{investment.type}</Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>
+                            Investido: {investment.amount.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Atual: {investment.current_value.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className={cn(
+                            "text-lg font-bold",
+                            returnValue >= 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {returnValue >= 0 ? '+' : ''}
+                            {returnValue.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </div>
+                          <div className={cn(
+                            "text-sm",
+                            returnValue >= 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {returnPercentage >= 0 ? '+' : ''}{returnPercentage.toFixed(2)}%
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteClick(investment.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <InvestmentDetailsModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        investments={investments.filter(inv => inv.type === selectedType)} type={""}      />
+
+      <EditGoalDialog
+        goal={goalToEdit}
+        isOpen={editGoalDialogOpen}
+        onClose={handleEditGoalClose}
+        onSuccess={loadGoals}
+      />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover este investimento? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteGoalDialogOpen} onOpenChange={setDeleteGoalDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteGoalConfirm}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };
@@ -9901,7 +11007,7 @@ interface Transaction {
   id: string;
   description: string;
   amount: number;
-  type: "income" | "expense";
+  type: 'income' | 'expense';
   category: string;
   date: string;
   group_id: string | null;
@@ -9917,7 +11023,7 @@ const Transactions = () => {
   const [filterGroup, setFilterGroup] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
+    to: endOfMonth(new Date())
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
@@ -9932,47 +11038,44 @@ const Transactions = () => {
       setLoading(true);
 
       let query = supabase
-        .from("transactions")
-        .select(
-          `
+        .from('transactions')
+        .select(`
           *,
           groups!left (
             name
           )
-        `
-        )
-        .order("date", { ascending: false });
+        `)
+        .order('date', { ascending: false });
 
       if (dateRange.from) {
-        query = query.gte("date", dateRange.from.toISOString().split("T")[0]);
+        query = query.gte('date', dateRange.from.toISOString().split('T')[0]);
       }
       if (dateRange.to) {
-        query = query.lte("date", dateRange.to.toISOString().split("T")[0]);
+        query = query.lte('date', dateRange.to.toISOString().split('T')[0]);
       }
 
       const { data, error } = await query;
 
       if (error) throw error;
 
-      const formattedData =
-        data?.map((t) => ({
-          id: t.id,
-          description: t.description,
-          amount: Number(t.amount),
-          type: t.type as "income" | "expense",
-          category: t.category,
-          date: t.date,
-          group_id: t.group_id,
-          group_name: t.groups?.name,
-        })) || [];
+      const formattedData = data?.map(t => ({
+        id: t.id,
+        description: t.description,
+        amount: Number(t.amount),
+        type: t.type as 'income' | 'expense',
+        category: t.category,
+        date: t.date,
+        group_id: t.group_id,
+        group_name: t.groups?.name
+      })) || [];
 
       setTransactions(formattedData);
     } catch (error) {
-      console.error("Erro ao carregar transações:", error);
+      console.error('Erro ao carregar transações:', error);
       toast({
         title: "Erro",
         description: "Erro ao carregar transações",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
@@ -9988,7 +11091,10 @@ const Transactions = () => {
     if (!transactionToDelete) return;
 
     try {
-      const { error } = await supabase.from("transactions").delete().eq("id", transactionToDelete);
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', transactionToDelete);
 
       if (error) throw error;
 
@@ -9999,11 +11105,11 @@ const Transactions = () => {
 
       loadTransactions();
     } catch (error) {
-      console.error("Erro ao remover transação:", error);
+      console.error('Erro ao remover transação:', error);
       toast({
         title: "Erro",
         description: "Erro ao remover transação",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setDeleteDialogOpen(false);
@@ -10011,24 +11117,29 @@ const Transactions = () => {
     }
   };
 
-  const filteredTransactions = transactions.filter((transaction) => {
-    const matchesSearch =
-      transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredTransactions = transactions.filter(transaction => {
+    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === "all" || transaction.type === filterType;
     const matchesCategory = filterCategory === "all" || transaction.category === filterCategory;
-    const matchesGroup = filterGroup === "all" || (filterGroup === "none" && !transaction.group_id) || transaction.group_id === filterGroup;
+    const matchesGroup = filterGroup === "all" || 
+                        (filterGroup === "none" && !transaction.group_id) ||
+                        transaction.group_id === filterGroup;
 
     return matchesSearch && matchesType && matchesCategory && matchesGroup;
   });
 
-  const totalIncome = filteredTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+  const totalIncome = filteredTransactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalExpense = filteredTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = filteredTransactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0);
 
   const balance = totalIncome - totalExpense;
 
-  const categories = Array.from(new Set(transactions.map((t) => t.category)));
+  const categories = Array.from(new Set(transactions.map(t => t.category)));
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -10043,28 +11154,30 @@ const Transactions = () => {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Transações</h1>
-            <p className="text-muted-foreground">Gerencie todas as suas entradas e saídas</p>
+            <p className="text-muted-foreground">
+              Gerencie todas as suas entradas e saídas
+            </p>
           </div>
           <div className="flex gap-2">
-            <AddTransactionDialog
-              type="income"
+            <AddTransactionDialog 
+              type="income" 
               onSuccess={loadTransactions}
               trigger={
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" />
                   Nova Receita
                 </Button>
-              }
+              } 
             />
-            <AddTransactionDialog
-              type="expense"
+            <AddTransactionDialog 
+              type="expense" 
               onSuccess={loadTransactions}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Nova Despesa
                 </Button>
-              }
+              } 
             />
           </div>
         </div>
@@ -10078,8 +11191,11 @@ const Transactions = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-
+              <DateFilter
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+              />
+              
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -10108,10 +11224,8 @@ const Transactions = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas categorias</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -10141,9 +11255,9 @@ const Transactions = () => {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Receitas</p>
                   <p className="text-2xl font-bold text-success">
-                    {totalIncome.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
+                    {totalIncome.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL'
                     })}
                   </p>
                 </div>
@@ -10158,9 +11272,9 @@ const Transactions = () => {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Despesas</p>
                   <p className="text-2xl font-bold text-destructive">
-                    {totalExpense.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
+                    {totalExpense.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL'
                     })}
                   </p>
                 </div>
@@ -10174,10 +11288,13 @@ const Transactions = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Saldo</p>
-                  <p className={cn("text-2xl font-bold", balance >= 0 ? "text-success" : "text-destructive")}>
-                    {balance.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
+                  <p className={cn(
+                    "text-2xl font-bold",
+                    balance >= 0 ? "text-success" : "text-destructive"
+                  )}>
+                    {balance.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL'
                     })}
                   </p>
                 </div>
@@ -10188,13 +11305,19 @@ const Transactions = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Transações ({filteredTransactions.length})</CardTitle>
+            <CardTitle>
+              Transações ({filteredTransactions.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">Carregando transações...</div>
+              <div className="text-center py-8 text-muted-foreground">
+                Carregando transações...
+              </div>
             ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Nenhuma transação encontrada</div>
+              <div className="text-center py-8 text-muted-foreground">
+                Nenhuma transação encontrada
+              </div>
             ) : (
               <div className="space-y-3">
                 {filteredTransactions.map((transaction) => (
@@ -10203,15 +11326,19 @@ const Transactions = () => {
                     className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-4 flex-1">
-                      <div
-                        className={cn(
-                          "p-2 rounded-full",
-                          transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                      <div className={cn(
+                        "p-2 rounded-full",
+                        transaction.type === "income" 
+                          ? "bg-success/10 text-success" 
+                          : "bg-destructive/10 text-destructive"
+                      )}>
+                        {transaction.type === "income" ? (
+                          <ArrowUpCircle className="h-5 w-5" />
+                        ) : (
+                          <ArrowDownCircle className="h-5 w-5" />
                         )}
-                      >
-                        {transaction.type === "income" ? <ArrowUpCircle className="h-5 w-5" /> : <ArrowDownCircle className="h-5 w-5" />}
                       </div>
-
+                      
                       <div className="flex-1">
                         <p className="font-medium">{transaction.description}</p>
                         <div className="flex items-center gap-2 mt-1">
@@ -10223,20 +11350,25 @@ const Transactions = () => {
                               {transaction.group_name}
                             </Badge>
                           )}
-                          <span className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(transaction.date).toLocaleDateString('pt-BR')}
+                          </span>
                         </div>
                       </div>
                     </div>
-
+                    
                     <div className="flex items-center gap-4">
-                      <p className={cn("text-lg font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                      <p className={cn(
+                        "text-lg font-semibold",
+                        transaction.type === "income" ? "text-success" : "text-destructive"
+                      )}>
                         {transaction.type === "income" ? "+" : "-"}
-                        {transaction.amount.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
+                        {transaction.amount.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL'
                         })}
                       </p>
-
+                      
                       <Button
                         variant="ghost"
                         size="icon"
@@ -10278,7 +11410,6 @@ const Transactions = () => {
 };
 
 export default Transactions;
-
 ----------------------------------------
 ENDOFFILE: src\pages\Transactions.tsx
 

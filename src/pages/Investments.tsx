@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign, Trash2, Edit } from "lucide-react";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { AddGoalDialog } from "@/components/dialogs/AddGoalDialog";
+import { EditGoalDialog } from "@/components/dialogs/EditGoalDialog";
 import { InvestmentDetailsModal } from "@/components/dialogs/InvestmentDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Investment {
@@ -38,6 +41,12 @@ const Investments = () => {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [investmentToDelete, setInvestmentToDelete] = useState<string | null>(null);
+  const [deleteGoalDialogOpen, setDeleteGoalDialogOpen] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState<string | null>(null);
+  const [editGoalDialogOpen, setEditGoalDialogOpen] = useState(false);
+  const [goalToEdit, setGoalToEdit] = useState<InvestmentGoal | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -87,11 +96,90 @@ const Investments = () => {
     }
   };
 
+  const handleDeleteClick = (investmentId: string) => {
+    setInvestmentToDelete(investmentId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!investmentToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('investments')
+        .delete()
+        .eq('id', investmentToDelete);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Investimento removido com sucesso!"
+      });
+
+      await loadInvestments();
+    } catch (error) {
+      console.error('Erro ao remover investimento:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover o investimento. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setInvestmentToDelete(null);
+    }
+  };
+
+  const handleDeleteGoalClick = (goalId: string) => {
+    setGoalToDelete(goalId);
+    setDeleteGoalDialogOpen(true);
+  };
+
+  const handleDeleteGoalConfirm = async () => {
+    if (!goalToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('investment_goals')
+        .delete()
+        .eq('id', goalToDelete);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Meta removida com sucesso!"
+      });
+
+      await loadGoals();
+    } catch (error) {
+      console.error('Erro ao remover meta:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover a meta. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setDeleteGoalDialogOpen(false);
+      setGoalToDelete(null);
+    }
+  };
+
+  const handleEditGoalClick = (goal: InvestmentGoal) => {
+    setGoalToEdit(goal);
+    setEditGoalDialogOpen(true);
+  };
+
+  const handleEditGoalClose = () => {
+    setEditGoalDialogOpen(false);
+    setGoalToEdit(null);
+  };
+
   const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrentValue = investments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
 
-  // Get unique investment types and their data
   const investmentTypes = [...new Set(investments.map(inv => inv.type))];
   
   const getTypeData = (type: string) => {
@@ -126,7 +214,6 @@ const Investments = () => {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
@@ -148,7 +235,6 @@ const Investments = () => {
           </div>
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -172,14 +258,14 @@ const Investments = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Valor Atual</p>
-                  <p className="text-2xl font-bold text-primary">
+                  <p className="text-2xl font-bold">
                     {totalCurrentValue.toLocaleString('pt-BR', {
                       style: 'currency',
                       currency: 'BRL'
                     })}
                   </p>
                 </div>
-                <PieChart className="h-8 w-8 text-primary" />
+                <TrendingUp className="h-8 w-8 text-success" />
               </div>
             </CardContent>
           </Card>
@@ -193,7 +279,7 @@ const Investments = () => {
                     "text-2xl font-bold",
                     totalReturn >= 0 ? "text-success" : "text-destructive"
                   )}>
-                    {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(2)}%
+                    {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
                   </p>
                 </div>
                 {totalReturn >= 0 ? (
@@ -212,7 +298,7 @@ const Investments = () => {
                   <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
                   <p className={cn(
                     "text-2xl font-bold",
-                    totalReturn >= 0 ? "text-success" : "text-destructive"
+                    totalCurrentValue - totalInvested >= 0 ? "text-success" : "text-destructive"
                   )}>
                     {(totalCurrentValue - totalInvested).toLocaleString('pt-BR', {
                       style: 'currency',
@@ -226,163 +312,12 @@ const Investments = () => {
           </Card>
         </div>
 
-        {/* Investments List */}
-        {investments.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Minha Carteira</CardTitle>
-              <CardDescription>
-                Detalhamento dos seus investimentos atuais
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {investments.map((investment) => {
-                  const investmentReturn = investment.amount > 0 
-                    ? ((investment.current_value - investment.amount) / investment.amount) * 100 
-                    : 0;
-                  const allocation = totalCurrentValue > 0 
-                    ? (investment.current_value / totalCurrentValue) * 100 
-                    : 0;
-
-                  return (
-                    <div
-                      key={investment.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 bg-primary/10 rounded-full">
-                          <TrendingUp className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">{investment.name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="secondary" className="text-xs">
-                              {investment.type}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {allocation.toFixed(1)}% da carteira
-                            </span>
-                            {investment.maturity_date && (
-                              <span className="text-xs text-muted-foreground">
-                                Venc: {new Date(investment.maturity_date).toLocaleDateString('pt-BR')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="flex items-center gap-4">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Investido</p>
-                            <p className="font-medium">
-                              {investment.amount.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Atual</p>
-                            <p className="font-medium">
-                              {investment.current_value.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Retorno</p>
-                            <p className={cn(
-                              "font-semibold",
-                              investmentReturn >= 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {investmentReturn >= 0 ? "+" : ""}{investmentReturn.toFixed(2)}%
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Investment Goals */}
-        {goals.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Metas de Investimento
-              </CardTitle>
-              <CardDescription>
-                Acompanhe o progresso das suas metas financeiras
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {goals.map((goal) => {
-                  const progress = goal.target_amount > 0 
-                    ? (goal.current_amount / goal.target_amount) * 100 
-                    : 0;
-
-                  return (
-                    <div key={goal.id} className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">{goal.name}</h4>
-                        <Badge variant="outline" className="text-xs">
-                          {progress.toFixed(1)}%
-                        </Badge>
-                      </div>
-                      
-                      <Progress value={progress} className="h-2" />
-                      
-                      <div className="flex justify-between text-sm text-muted-foreground">
-                        <span>
-                          {goal.current_amount.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
-                          })}
-                        </span>
-                        <span>
-                          {goal.target_amount.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
-                          })}
-                        </span>
-                      </div>
-                      
-                      <div className="text-xs text-muted-foreground">
-                        Faltam {(goal.target_amount - goal.current_amount).toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })} para atingir a meta
-                      </div>
-
-                      {goal.target_date && (
-                        <div className="text-xs text-muted-foreground">
-                          Meta para: {new Date(goal.target_date).toLocaleDateString('pt-BR')}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Asset Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
               <CardTitle>Distribuição por Tipo</CardTitle>
               <CardDescription>
-                Como seus investimentos estão distribuídos (clique para ver detalhes)
+                Composição da sua carteira de investimentos
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -423,49 +358,213 @@ const Investments = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Performance Mensal</CardTitle>
+              <CardTitle>Metas de Investimento</CardTitle>
               <CardDescription>
-                Evolução da carteira nos últimos meses
+                Progresso das suas metas financeiras
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[200px] flex items-center justify-center bg-muted/30 rounded-lg">
-                <p className="text-muted-foreground">Gráfico de performance será implementado</p>
+              <div className="space-y-4">
+                {goals.length > 0 ? (
+                  goals.map((goal) => {
+                    const progress = (goal.current_amount / goal.target_amount) * 100;
+                    
+                    return (
+                      <div key={goal.id} className="space-y-2 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: goal.color || '#3b82f6' }}
+                            />
+                            <span className="font-medium">{goal.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">
+                              {goal.current_amount.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                              })} / {goal.target_amount.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                              })}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleEditGoalClick(goal)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleDeleteGoalClick(goal.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                        <Progress value={progress} className="h-2" />
+                        <p className="text-xs text-muted-foreground">
+                          {progress.toFixed(1)}% concluído
+                        </p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Target className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma meta cadastrada ainda.</p>
+                    <p className="text-sm">Crie sua primeira meta de investimento.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Empty State */}
-        {investments.length === 0 && (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <TrendingUp className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
-              <p className="text-muted-foreground mb-4">
-                Comece a construir sua carteira de investimentos adicionando seu primeiro investimento.
-              </p>
-              <AddInvestmentDialog 
-                trigger={
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Primeiro Investimento
-                  </Button>
-                }
-                onSuccess={loadInvestments}
-              />
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Todos os Investimentos</CardTitle>
+            <CardDescription>
+              Lista completa dos seus investimentos
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {investments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
+                  <p className="mb-4">
+                    Comece a construir sua carteira de investimentos adicionando seu primeiro investimento.
+                  </p>
+                  <AddInvestmentDialog onSuccess={loadInvestments} />
+                </div>
+              ) : (
+                investments.map((investment) => {
+                  const returnValue = investment.current_value - investment.amount;
+                  const returnPercentage = (returnValue / investment.amount) * 100;
 
-        {/* Investment Details Modal */}
-        <InvestmentDetailsModal
-          open={modalOpen}
-          onOpenChange={setModalOpen}
-          type={selectedType}
-          investments={selectedType ? getTypeData(selectedType).typeInvestments : []}
-        />
+                  return (
+                    <div
+                      key={investment.id}
+                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors group"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="font-medium">{investment.name}</h3>
+                          <Badge variant="outline">{investment.type}</Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>
+                            Investido: {investment.amount.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Atual: {investment.current_value.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className={cn(
+                            "text-lg font-bold",
+                            returnValue >= 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {returnValue >= 0 ? '+' : ''}
+                            {returnValue.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </div>
+                          <div className={cn(
+                            "text-sm",
+                            returnValue >= 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {returnPercentage >= 0 ? '+' : ''}{returnPercentage.toFixed(2)}%
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteClick(investment.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <InvestmentDetailsModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        investments={investments.filter(inv => inv.type === selectedType)} type={""}      />
+
+      <EditGoalDialog
+        goal={goalToEdit}
+        isOpen={editGoalDialogOpen}
+        onClose={handleEditGoalClose}
+        onSuccess={loadGoals}
+      />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover este investimento? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteGoalDialogOpen} onOpenChange={setDeleteGoalDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteGoalConfirm}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };

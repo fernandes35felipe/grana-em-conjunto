@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
+import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "lucide-react";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
+import { EditGroupDialog } from "@/components/dialogs/EditGroupDialog";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { GroupDetailsModal } from "@/components/groups/GroupDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -36,6 +38,8 @@ const Groups = () => {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string } | null>(null);
+  const [editGroupId, setEditGroupId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchGroups = async () => {
@@ -45,7 +49,6 @@ const Groups = () => {
       
       setCurrentUserId(user.id);
 
-      // Buscar grupos onde o usuário é criador
       const { data: createdGroups, error: createdError } = await supabase
         .from('groups')
         .select('*')
@@ -53,7 +56,6 @@ const Groups = () => {
 
       if (createdError) throw createdError;
 
-      // Buscar grupos onde o usuário é membro
       const { data: memberGroups, error: memberError } = await supabase
         .from('group_members')
         .select(`
@@ -63,21 +65,17 @@ const Groups = () => {
 
       if (memberError) throw memberError;
 
-      // Combinar grupos
       const allGroups = [
         ...(createdGroups || []),
         ...(memberGroups?.map(mg => mg.groups).filter(Boolean) || [])
       ];
 
-      // Remover duplicatas
       const uniqueGroups = allGroups.filter((group, index, arr) => 
         arr.findIndex(g => g.id === group.id) === index
       );
 
-      // Para cada grupo, buscar membros e transações
       const groupsWithStats = await Promise.all(
         uniqueGroups.map(async (group) => {
-          // Buscar membros do grupo (simples, sem join)
           const { data: members, error: membersError } = await supabase
             .from('group_members')
             .select('user_id, joined_at')
@@ -85,7 +83,6 @@ const Groups = () => {
 
           if (membersError) throw membersError;
 
-          // Buscar perfis dos membros separadamente
           const membersWithProfiles = await Promise.all(
             (members || []).map(async (member) => {
               const { data: profile } = await supabase
@@ -101,7 +98,6 @@ const Groups = () => {
             })
           );
 
-          // Buscar transações do grupo
           const { data: transactions, error: transError } = await supabase
             .from('transactions')
             .select('amount, type')
@@ -117,7 +113,6 @@ const Groups = () => {
             ?.filter(t => t.type === 'expense')
             .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-          // Buscar última atividade
           const { data: lastTransaction } = await supabase
             .from('transactions')
             .select('created_at')
@@ -153,280 +148,245 @@ const Groups = () => {
     fetchGroups();
   }, []);
 
-  const getColorClass = (color: string) => {
-    const colorMap: Record<string, string> = {
-      blue: "bg-blue-500",
-      green: "bg-green-500",
-      purple: "bg-purple-500",
-      red: "bg-red-500",
-      yellow: "bg-yellow-500",
-      pink: "bg-pink-500",
-      orange: "bg-orange-500",
-      indigo: "bg-indigo-500"
-    };
-    return colorMap[color] || "bg-blue-500";
+  const handleEditGroup = (groupId: string) => {
+    setEditGroupId(groupId);
+    setEditDialogOpen(true);
   };
 
-  const isGroupAdmin = (group: Group, currentUserId: string) => {
-    return group.created_by === currentUserId;
+  const handleEditClose = () => {
+    setEditDialogOpen(false);
+    setEditGroupId(null);
   };
 
   if (loading) {
     return (
       <DashboardLayout>
         <div className="p-6 space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">Grupos</h1>
-              <p className="text-muted-foreground">
-                Gerencie despesas compartilhadas com outras pessoas
-              </p>
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-muted rounded w-1/4"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1,2,3].map(i => (
+                <div key={i} className="h-48 bg-muted rounded"></div>
+              ))}
             </div>
-          <AddGroupDialog onGroupCreated={fetchGroups} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="animate-pulse">
-                <CardContent className="p-6">
-                  <div className="h-20 bg-muted rounded"></div>
-                </CardContent>
-              </Card>
-            ))}
           </div>
         </div>
       </DashboardLayout>
     );
   }
+
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Grupos</h1>
-            <p className="text-muted-foreground">
-              Gerencie despesas compartilhadas com outras pessoas
-            </p>
+      <div className="h-full overflow-y-auto">
+        <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Grupos</h1>
+              <p className="text-sm md:text-base text-muted-foreground">
+                Gerencie e compartilhe despesas com seus grupos
+              </p>
+            </div>
+            <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
-          <AddGroupDialog onGroupCreated={fetchGroups} />
-        </div>
 
-        {/* Groups Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {groups.map((group) => {
-            const isAdmin = currentUserId ? isGroupAdmin(group, currentUserId) : false;
-            
-            return (
-              <Card key={group.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-full ${getColorClass(group.color)} flex items-center justify-center`}>
-                        <Users className="h-6 w-6 text-white" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {groups.map((group) => {
+              const balance = group.totalIncome + group.totalExpenses;
+              
+              return (
+                <Card key={group.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-12 h-12 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: group.color || '#3b82f6' }}
+                        >
+                          <Users className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
                           <CardTitle className="text-lg">{group.name}</CardTitle>
-                          {isAdmin && (
-                            <Badge variant="outline" className="text-xs">Admin</Badge>
+                          {group.description && (
+                            <CardDescription className="text-xs mt-1">
+                              {group.description}
+                            </CardDescription>
                           )}
                         </div>
-                        <CardDescription className="text-sm">
-                          {group.description || "Sem descrição"}
-                        </CardDescription>
                       </div>
-                    </div>
-                    {isAdmin && (
-                      <Button variant="ghost" size="sm">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditGroup(group.id)}
+                      >
                         <Settings className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="space-y-4">
-                  {/* Members */}
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-2">Membros</p>
-                    <div className="flex items-center gap-2">
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Membros</span>
                       <div className="flex -space-x-2">
-                        {group.members.slice(0, 3).map((member, index) => (
-                          <Avatar key={index} className="w-8 h-8 border-2 border-background">
+                        {group.members.slice(0, 3).map((member, idx) => (
+                          <Avatar key={idx} className="h-8 w-8 border-2 border-background">
                             <AvatarFallback className="text-xs">
-                              {member.profiles?.full_name 
-                                ? member.profiles.full_name.slice(0, 2).toUpperCase()
-                                : "??"}
+                              {(member.profiles?.full_name || 'U').charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         ))}
                         {group.members.length > 3 && (
-                          <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
-                            <span className="text-xs text-muted-foreground">
-                              +{group.members.length - 3}
-                            </span>
+                          <div className="h-8 w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
+                            <span className="text-xs font-medium">+{group.members.length - 3}</span>
                           </div>
                         )}
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        {group.members.length} membro{group.members.length !== 1 ? 's' : ''}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {/* Financial Summary */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-success" />
-                        <span className="text-sm text-muted-foreground">Receitas</span>
-                      </div>
-                      <span className="font-medium text-success">
-                        {group.totalIncome.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingDown className="h-4 w-4 text-destructive" />
-                        <span className="text-sm text-muted-foreground">Despesas</span>
-                      </div>
-                      <span className="font-medium text-destructive">
-                        {Math.abs(group.totalExpenses).toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        })}
-                      </span>
                     </div>
 
-                    <div className="border-t pt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Saldo do Grupo</span>
-                        <span className={`font-semibold ${
-                          (group.totalIncome + group.totalExpenses) >= 0 
-                            ? "text-success" 
-                            : "text-destructive"
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <TrendingUp className="h-4 w-4 text-success" />
+                          Receitas
+                        </span>
+                        <span className="font-medium text-success">
+                          {group.totalIncome.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <TrendingDown className="h-4 w-4 text-destructive" />
+                          Despesas
+                        </span>
+                        <span className="font-medium text-destructive">
+                          {group.totalExpenses.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <span className="text-sm font-medium">Saldo</span>
+                        <span className={`font-bold ${
+                          balance >= 0 ? 'text-success' : 'text-destructive'
                         }`}>
-                          {(group.totalIncome + group.totalExpenses).toLocaleString('pt-BR', {
+                          {balance.toLocaleString('pt-BR', {
                             style: 'currency',
                             currency: 'BRL'
                           })}
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Last Activity */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Última atividade:</span>
-                    <span>{new Date(group.lastActivity || group.created_at).toLocaleDateString('pt-BR')}</span>
-                  </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Detalhes
+                      </Button>
+                      <AddTransactionDialog
+                        type="expense"
+                        trigger={
+                          <Button variant="outline" className="flex-1">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Despesa
+                          </Button>
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex-1"
-                      onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Ver Detalhes
+          {groups.length === 0 && (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
+                <p className="text-muted-foreground mb-4">
+                  Crie seu primeiro grupo para começar a compartilhar despesas
+                </p>
+                <AddGroupDialog 
+                  onGroupCreated={fetchGroups}
+                  trigger={
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Criar Primeiro Grupo
                     </Button>
-                    <AddTransactionDialog 
-                      type="expense" 
-                      trigger={
-                        <Button size="sm" className="flex-1">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Novo Lançamento
-                        </Button>
-                      } 
-                    />
+                  } 
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total de Grupos</p>
+                    <p className="text-2xl font-bold">{groups.length}</p>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Empty State */}
-        {groups.length === 0 && (
-          <Card className="py-12">
-            <CardContent className="text-center">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
-              <p className="text-muted-foreground mb-4">
-                Crie seu primeiro grupo para começar a compartilhar despesas
-              </p>
-              <AddGroupDialog 
-                onGroupCreated={fetchGroups}
-                trigger={
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Criar Primeiro Grupo
-                  </Button>
-                } 
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total de Grupos</p>
-                  <p className="text-2xl font-bold">{groups.length}</p>
+                  <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <Users className="h-8 w-8 text-muted-foreground" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Despesas em Grupos</p>
-                  <p className="text-2xl font-bold text-destructive">
-                    R$ {Math.abs(groups.reduce((sum, group) => sum + group.totalExpenses, 0))
-                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total de Membros</p>
+                    <p className="text-2xl font-bold">
+                      {groups.reduce((sum, g) => sum + g.members.length, 0)}
+                    </p>
+                  </div>
+                  <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <TrendingDown className="h-8 w-8 text-destructive" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Receitas em Grupos</p>
-                  <p className="text-2xl font-bold text-success">
-                    R$ {groups.reduce((sum, group) => sum + group.totalIncome, 0)
-                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
+            <Card>
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Saldo Total</p>
+                    <p className="text-2xl font-bold">
+                      {groups.reduce((sum, g) => sum + g.totalIncome + g.totalExpenses, 0).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      })}
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <TrendingUp className="h-8 w-8 text-success" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-        </div>
+      </div>
 
-        <GroupDetailsModal
-          isOpen={selectedGroup !== null}
-          onClose={() => setSelectedGroup(null)}
-          groupId={selectedGroup?.id || ""}
-          groupName={selectedGroup?.name || ""}
-        />
-      </DashboardLayout>
-    );
-  };
-  
-  export default Groups;
+      <GroupDetailsModal
+        isOpen={!!selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+        groupId={selectedGroup?.id || ""}
+        groupName={selectedGroup?.name || ""}
+      />
+
+      <EditGroupDialog
+        groupId={editGroupId}
+        isOpen={editDialogOpen}
+        onClose={handleEditClose}
+        onSuccess={fetchGroups}
+      />
+    </DashboardLayout>
+  );
+};
+
+export default Groups;

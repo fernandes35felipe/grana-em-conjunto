@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { startOfMonth, endOfMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -126,6 +127,7 @@ const Dashboard = () => {
                 change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
               />
+
             </>
           )}
         </div>
@@ -133,17 +135,7 @@ const Dashboard = () => {
         {/* Charts and Recent Transactions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart Placeholder */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumo Mensal</CardTitle>
-              <CardDescription>Evolução das receitas e despesas nos últimos 6 meses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] flex items-center justify-center bg-muted/30 rounded-lg">
-                <p className="text-muted-foreground">Gráfico será implementado em breve</p>
-              </div>
-            </CardContent>
-          </Card>
+              <FixedBalanceCard />
 
           {/* Recent Transactions */}
           <TransactionsList />
