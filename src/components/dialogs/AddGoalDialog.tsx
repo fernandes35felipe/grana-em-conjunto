@@ -1,13 +1,14 @@
 import { useState } from "react";
+import { Target } from "lucide-react";
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Target } from "lucide-react";
 
 interface AddGoalDialogProps {
   trigger?: React.ReactNode;
@@ -23,7 +24,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
     current_amount: "",
     color: "blue",
     description: "",
-    target_date: ""
+    target_date: "",
+    priority: "5"
   });
   const { toast } = useToast();
 
@@ -56,6 +58,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
 
       const targetAmount = parseFloat(formData.target_amount);
       const currentAmount = formData.current_amount ? parseFloat(formData.current_amount) : 0;
+      const priority = parseInt(formData.priority);
 
       const { error } = await supabase
         .from('investment_goals')
@@ -66,7 +69,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
           current_amount: currentAmount,
           color: formData.color,
           description: formData.description || null,
-          target_date: formData.target_date || null
+          target_date: formData.target_date || null,
+          priority: priority
         });
 
       if (error) throw error;
@@ -82,7 +86,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
         current_amount: "",
         color: "blue",
         description: "",
-        target_date: ""
+        target_date: "",
+        priority: "5"
       });
       setOpen(false);
       onSuccess?.();
@@ -99,7 +104,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
   };
 
   const defaultTrigger = (
-    <Button variant="outline">
+    <Button>
       <Target className="h-4 w-4 mr-2" />
       Nova Meta
     </Button>
@@ -117,7 +122,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
             Nova Meta de Investimento
           </DialogTitle>
           <DialogDescription>
-            Crie uma nova meta para acompanhar seus objetivos financeiros.
+            Defina uma meta financeira para acompanhar seu progresso.
           </DialogDescription>
         </DialogHeader>
 
@@ -126,53 +131,85 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
             <Label htmlFor="name">Nome da Meta *</Label>
             <Input
               id="name"
-              placeholder="Ex: Casa Própria"
+              placeholder="Ex: Casa própria, Aposentadoria..."
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              required
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="target_amount">Valor Alvo *</Label>
-            <Input
-              id="target_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.target_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="target_amount">Valor Alvo *</Label>
+              <Input
+                id="target_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.target_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="current_amount">Valor Atual</Label>
+              <Input
+                id="current_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.current_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="current_amount">Valor Atual (opcional)</Label>
-            <Input
-              id="current_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.current_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="color">Cor</Label>
-            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma cor" />
-              </SelectTrigger>
-              <SelectContent>
-                {colors.map((color) => (
-                  <SelectItem key={color.value} value={color.value}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full bg-${color.value}-500`} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="color">Cor</Label>
+              <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+                <SelectTrigger id="color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
                       {color.label}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="priority">Prioridade *</Label>
+              <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}>
+                <SelectTrigger id="priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 - Mais Alta</SelectItem>
+                  <SelectItem value="2">2 - Alta</SelectItem>
+                  <SelectItem value="3">3 - Média</SelectItem>
+                  <SelectItem value="4">4 - Baixa</SelectItem>
+                  <SelectItem value="5">5 - Mais Baixa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição (opcional)</Label>
+            <Textarea
+              id="description"
+              placeholder="Adicione detalhes sobre esta meta..."
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              rows={3}
+            />
           </div>
 
           <div className="space-y-2">
@@ -182,16 +219,6 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
               type="date"
               value={formData.target_date}
               onChange={(e) => setFormData(prev => ({ ...prev, target_date: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Descrição (opcional)</Label>
-            <Textarea
-              id="description"
-              placeholder="Descrição da meta..."
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
             />
           </div>
 

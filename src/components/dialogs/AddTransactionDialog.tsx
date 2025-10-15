@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -40,9 +39,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     group_id: "personal",
     assigned_to: "self",
     date: format(new Date(), 'yyyy-MM-dd'),
-    notes: "",
     is_recurring: false,
-    recurrence_count: "1",
+    recurrence_count: "2",
     is_fixed: false
   });
   const { toast } = useToast();
@@ -145,6 +143,18 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     }
   }, [formData.group_id]);
 
+  useEffect(() => {
+    if (formData.is_fixed) {
+      setFormData(prev => ({ ...prev, is_recurring: false }));
+    }
+  }, [formData.is_fixed]);
+
+  useEffect(() => {
+    if (formData.is_recurring) {
+      setFormData(prev => ({ ...prev, is_fixed: false }));
+    }
+  }, [formData.is_recurring]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -157,6 +167,15 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       return;
     }
 
+    if (formData.is_recurring && (!formData.recurrence_count || parseInt(formData.recurrence_count) < 1)) {
+      toast({
+        title: "Erro",
+        description: "Informe a quantidade de meses para recorrência",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -164,8 +183,17 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       if (!user) throw new Error("Usuário não autenticado");
 
       const amount = parseFloat(formData.amount);
-      const recurrenceId = formData.is_recurring ? crypto.randomUUID() : null;
-      const recurrenceCount = formData.is_recurring ? parseInt(formData.recurrence_count) : 1;
+      
+      let recurrenceId = null;
+      let recurrenceCount = 1;
+
+      if (formData.is_fixed) {
+        recurrenceId = crypto.randomUUID();
+        recurrenceCount = 60;
+      } else if (formData.is_recurring) {
+        recurrenceId = crypto.randomUUID();
+        recurrenceCount = parseInt(formData.recurrence_count);
+      }
 
       const transactionsToInsert = [];
 
@@ -193,15 +221,18 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
       if (error) throw error;
 
-      const recurrenceText = formData.is_recurring 
-        ? ` (${recurrenceCount} ${recurrenceCount === 1 ? 'mês' : 'meses'})`
-        : '';
-
-      const fixedText = formData.is_fixed ? ' fixo' : '';
+      let successMessage = "";
+      if (formData.is_fixed) {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} fixa adicionada com sucesso! Criada para os próximos 60 meses.`;
+      } else if (formData.is_recurring) {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} recorrente adicionada com sucesso! (${recurrenceCount} ${recurrenceCount === 1 ? 'mês' : 'meses'})`;
+      } else {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`;
+      }
 
       toast({
         title: "Sucesso",
-        description: `${type === "income" ? "Receita" : "Despesa"}${fixedText} adicionada com sucesso!${recurrenceText}`
+        description: successMessage
       });
 
       setFormData({
@@ -211,9 +242,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         group_id: "personal",
         assigned_to: "self",
         date: format(new Date(), 'yyyy-MM-dd'),
-        notes: "",
         is_recurring: false,
-        recurrence_count: "1",
+        recurrence_count: "2",
         is_fixed: false
       });
       setOpen(false);
@@ -276,9 +306,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             <Label htmlFor="description">Descrição *</Label>
             <Input
               id="description"
-              placeholder="Ex: Aluguel"
+              placeholder="Ex: Salário, Aluguel..."
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              required
             />
           </div>
 
@@ -289,9 +320,11 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 id="amount"
                 type="number"
                 step="0.01"
+                min="0"
                 placeholder="0,00"
                 value={formData.amount}
                 onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                required
               />
             </div>
 
@@ -302,19 +335,25 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                required
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="category">Categoria *</Label>
-            <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
+            <Select 
+              value={formData.category} 
+              onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+            >
               <SelectTrigger id="category">
                 <SelectValue placeholder="Selecione uma categoria" />
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -322,14 +361,19 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
           <div className="space-y-2">
             <Label htmlFor="group">Grupo</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value }))}>
+            <Select 
+              value={formData.group_id} 
+              onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value, assigned_to: "self" }))}
+            >
               <SelectTrigger id="group">
-                <SelectValue />
+                <SelectValue placeholder="Pessoal" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="personal">Pessoal</SelectItem>
                 {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -337,10 +381,13 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
           {formData.group_id !== "personal" && groupUsers.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="assigned_to">Atribuir para</Label>
-              <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
+              <Label htmlFor="assigned_to">Atribuir a</Label>
+              <Select 
+                value={formData.assigned_to} 
+                onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}
+              >
                 <SelectTrigger id="assigned_to">
-                  <SelectValue />
+                  <SelectValue placeholder="Selecione um membro" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="self">Eu mesmo</SelectItem>
@@ -354,62 +401,58 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </div>
           )}
 
-          <div className="space-y-4 pt-4 border-t">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_fixed">Lançamento Fixo</Label>
-                <p className="text-xs text-muted-foreground">
-                  Aparecerá no balanço fixo mensal
-                </p>
-              </div>
-              <Switch
+          <div className="space-y-4 pt-4 border-t-2">
+            <div className="flex items-start gap-3 p-4 border-2 rounded-lg hover:bg-accent/50 transition-colors">
+              <Checkbox
                 id="is_fixed"
                 checked={formData.is_fixed}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_fixed: checked }))}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_fixed: checked as boolean }))}
+                className="mt-1"
               />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_recurring">Lançamento Recorrente</Label>
-                <p className="text-xs text-muted-foreground">
-                  Repetir por vários meses
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="is_fixed" className="text-base font-semibold cursor-pointer">
+                  Lançamento Fixo
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Será criado para os próximos 60 meses (5 anos). Ao excluir, será removido de todos os meses
                 </p>
               </div>
-              <Switch
+            </div>
+
+            <div className="flex items-start gap-3 p-4 border-2 rounded-lg hover:bg-accent/50 transition-colors">
+              <Checkbox
                 id="is_recurring"
                 checked={formData.is_recurring}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_recurring: checked }))}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_recurring: checked as boolean }))}
+                className="mt-1"
               />
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="is_recurring" className="text-base font-semibold cursor-pointer">
+                  Lançamento Recorrente
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Repetir por uma quantidade específica de meses
+                </p>
+              </div>
             </div>
 
             {formData.is_recurring && (
-              <div className="space-y-2 pl-4 border-l-2">
-                <Label htmlFor="recurrence_count">Repetir por quantos meses? *</Label>
+              <div className="space-y-2 pl-4 ml-7 border-l-4 border-primary">
+                <Label htmlFor="recurrence_count" className="font-semibold">Por quantos meses? *</Label>
                 <Input
                   id="recurrence_count"
                   type="number"
-                  min="1"
+                  min="2"
                   max="60"
                   value={formData.recurrence_count}
                   onChange={(e) => setFormData(prev => ({ ...prev, recurrence_count: e.target.value }))}
+                  required
                 />
-                <p className="text-xs text-muted-foreground">
-                  Serão criados {formData.recurrence_count} lançamento(s) mensais
+                <p className="text-sm text-muted-foreground font-medium">
+                  Serão criados {formData.recurrence_count} lançamento(s) mensais consecutivos
                 </p>
               </div>
             )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notes">Observações</Label>
-            <Textarea
-              id="notes"
-              placeholder="Adicione observações..."
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              rows={3}
-            />
           </div>
 
           <div className="flex gap-2 pt-4">

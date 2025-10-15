@@ -1,14 +1,10 @@
-// Em src/components/filters/DateFilter.tsx
-
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, addMonths } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface DateRange {
   from: Date;
@@ -21,7 +17,6 @@ interface DateFilterProps {
 }
 
 export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) => {
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState("current-month");
 
   const presets = [
@@ -30,8 +25,8 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
       value: "current-month",
       getRange: () => ({
         from: startOfMonth(new Date()),
-        to: endOfMonth(new Date()),
-      }),
+        to: endOfMonth(new Date())
+      })
     },
     {
       label: "Mês passado",
@@ -40,9 +35,9 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const lastMonth = subMonths(new Date(), 1);
         return {
           from: startOfMonth(lastMonth),
-          to: endOfMonth(lastMonth),
+          to: endOfMonth(lastMonth)
         };
-      },
+      }
     },
     {
       label: "Próximo mês",
@@ -51,96 +46,101 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const nextMonth = addMonths(new Date(), 1);
         return {
           from: startOfMonth(nextMonth),
-          to: endOfMonth(nextMonth),
+          to: endOfMonth(nextMonth)
         };
-      },
+      }
     },
     {
       label: "Este ano",
       value: "current-year",
       getRange: () => ({
         from: startOfYear(new Date()),
-        to: endOfYear(new Date()),
-      }),
+        to: endOfYear(new Date())
+      })
     },
     {
       label: "Personalizado",
       value: "custom",
-      getRange: () => dateRange,
-    },
+      getRange: () => dateRange
+    }
   ];
 
   const handlePresetChange = (value: string) => {
     setSelectedPreset(value);
     if (value !== "custom") {
-      const preset = presets.find((p) => p.value === value);
+      const preset = presets.find(p => p.value === value);
       if (preset) {
         onDateRangeChange(preset.getRange());
       }
     }
   };
 
-  const formatDateRange = (range: DateRange) => {
-    if (!range.from || !range.to) return "Selecione o período";
-
-    if (format(range.from, "yyyy-MM", { locale: ptBR }) === format(range.to, "yyyy-MM", { locale: ptBR })) {
-      return format(range.from, "MMMM 'de' yyyy", { locale: ptBR });
+  const handleFromDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    if (!isNaN(newDate.getTime())) {
+      onDateRangeChange({ from: newDate, to: dateRange.to });
+      setSelectedPreset("custom");
     }
+  };
 
-    return `${format(range.from, "dd/MM/yy", { locale: ptBR })} - ${format(range.to, "dd/MM/yy", { locale: ptBR })}`;
+  const handleToDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    if (!isNaN(newDate.getTime())) {
+      onDateRangeChange({ from: dateRange.from, to: newDate });
+      setSelectedPreset("custom");
+    }
   };
 
   return (
-    <div className="flex gap-2">
-      <Select value={selectedPreset} onValueChange={handlePresetChange}>
-        <SelectTrigger className="w-[140px]">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {presets.map((preset) => (
-            <SelectItem key={preset.value} value={preset.value}>
-              {preset.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="flex flex-wrap items-end gap-4">
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="preset" className="mb-2 block">Período</Label>
+        <Select value={selectedPreset} onValueChange={handlePresetChange}>
+          <SelectTrigger id="preset" className="w-full sm:w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {presets.map(preset => (
+              <SelectItem key={preset.value} value={preset.value}>
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={cn("w-[240px] justify-start text-left font-normal", !dateRange.from && "text-muted-foreground")}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {formatDateRange(dateRange)}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-auto p-0 date-filter-popover"
-          align="start"
-          side="bottom"
-          sideOffset={4}
-          avoidCollisions={true}
-          collisionPadding={10}
-          onOpenAutoFocus={(e) => e.preventDefault()}
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="date-from" className="mb-2 block">Data Início</Label>
+        <Input
+          id="date-from"
+          type="date"
+          value={format(dateRange.from, 'yyyy-MM-dd')}
+          onChange={handleFromDateChange}
+          className="w-full sm:w-[160px]"
+        />
+      </div>
+
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="date-to" className="mb-2 block">Data Fim</Label>
+        <Input
+          id="date-to"
+          type="date"
+          value={format(dateRange.to, 'yyyy-MM-dd')}
+          onChange={handleToDateChange}
+          className="w-full sm:w-[160px]"
+        />
+      </div>
+
+      {selectedPreset === "custom" && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePresetChange("current-month")}
+          className="w-full sm:w-auto"
         >
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={dateRange.from}
-            selected={{ from: dateRange.from, to: dateRange.to }}
-            onSelect={(range) => {
-              if (range?.from && range?.to) {
-                onDateRangeChange({ from: range.from, to: range.to });
-                setSelectedPreset("custom");
-                setCalendarOpen(false);
-              }
-            }}
-            numberOfMonths={2}
-            locale={ptBR}
-          />
-        </PopoverContent>
-      </Popover>
+          Resetar
+        </Button>
+      )}
     </div>
   );
 };

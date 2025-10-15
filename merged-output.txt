@@ -1,12 +1,12 @@
 # Code Merge Output
-Generated at: 2025-10-09T03:15:06.851Z
+Generated at: 2025-10-15T03:55:01.961Z
 Source path: .
 Files processed: 91
-Total lines: 11093
-Total characters: 371161
+Total lines: 11355
+Total characters: 380003
 
 File types:
-  - tsx: 74 files (10.034 lines)
+  - tsx: 74 files (10.296 lines)
   - ts: 8 files (748 lines)
   - json: 5 files (179 lines)
   - js: 2 files (37 lines)
@@ -33,19 +33,19 @@ Project structure & file index:
       auth/
         - ProtectedRoute.tsx (24 lines)
       dashboard/
-        - FixedBalanceCard.tsx (197 lines)
+        - FixedBalanceCard.tsx (214 lines)
         - MetricCard.tsx (47 lines)
         - TransactionsList.tsx (175 lines)
       dialogs/
-        - AddGoalDialog.tsx (219 lines)
+        - AddGoalDialog.tsx (246 lines)
         - AddGroupDialog.tsx (190 lines)
         - AddInvestmentDialog.tsx (308 lines)
-        - AddTransactionDialog.tsx (436 lines)
-        - EditGoalDialog.tsx (227 lines)
+        - AddTransactionDialog.tsx (479 lines)
+        - EditGoalDialog.tsx (250 lines)
         - EditGroupDialog.tsx (468 lines)
         - InvestmentDetailsModal.tsx (219 lines)
       filters/
-        - DateFilter.tsx (147 lines)
+        - DateFilter.tsx (146 lines)
       groups/
         - GroupDetailsModal.tsx (325 lines)
       layout/
@@ -117,9 +117,9 @@ Project structure & file index:
       - Dashboard.tsx (168 lines)
       - Groups.tsx (392 lines)
       - Index.tsx (138 lines)
-      - Investments.tsx (572 lines)
+      - Investments.tsx (704 lines)
       - NotFound.tsx (28 lines)
-      - Transactions.tsx (432 lines)
+      - Transactions.tsx (453 lines)
 ================================================================================
 
 STARTOFFILE: components.json
@@ -481,7 +481,7 @@ ENDOFFILE: src\components\auth\ProtectedRoute.tsx
 STARTOFFILE: src\components\dashboard\FixedBalanceCard.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -495,6 +495,7 @@ interface FixedTransaction {
   amount: number;
   type: 'income' | 'expense';
   category: string;
+  recurrence_id: string;
 }
 
 export const FixedBalanceCard = () => {
@@ -514,15 +515,31 @@ export const FixedBalanceCard = () => {
 
       const { data, error } = await supabase
         .from('transactions')
-        .select('id, description, amount, type, category')
+        .select('id, description, amount, type, category, recurrence_id')
         .eq('user_id', user.id)
         .eq('is_fixed', true)
         .order('amount', { ascending: false });
 
       if (error) throw error;
 
-      const income = data?.filter(t => t.type === 'income') || [];
-      const expenses = data?.filter(t => t.type === 'expense') || [];
+      const uniqueTransactions = new Map<string, FixedTransaction>();
+      
+      data?.forEach(t => {
+        if (!uniqueTransactions.has(t.recurrence_id)) {
+          uniqueTransactions.set(t.recurrence_id, {
+            id: t.id,
+            description: t.description,
+            amount: Number(t.amount),
+            type: t.type as 'income' | 'expense',
+            category: t.category,
+            recurrence_id: t.recurrence_id
+          });
+        }
+      });
+
+      const uniqueArray = Array.from(uniqueTransactions.values());
+      const income = uniqueArray.filter(t => t.type === 'income');
+      const expenses = uniqueArray.filter(t => t.type === 'expense');
 
       setFixedIncome(income);
       setFixedExpenses(expenses);
@@ -567,7 +584,7 @@ export const FixedBalanceCard = () => {
           Balanço Fixo Mensal
         </CardTitle>
         <CardDescription>
-          Receitas e despesas fixas que se repetem mensalmente
+          Receitas e despesas fixas que se repetem todos os meses
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -593,7 +610,7 @@ export const FixedBalanceCard = () => {
               ) : (
                 fixedIncome.map((transaction) => (
                   <div
-                    key={transaction.id}
+                    key={transaction.recurrence_id}
                     className="flex items-center justify-between p-2 rounded-md bg-muted/30"
                   >
                     <div className="flex-1">
@@ -633,7 +650,7 @@ export const FixedBalanceCard = () => {
               ) : (
                 fixedExpenses.map((transaction) => (
                   <div
-                    key={transaction.id}
+                    key={transaction.recurrence_id}
                     className="flex items-center justify-between p-2 rounded-md bg-muted/30"
                   >
                     <div className="flex-1">
@@ -641,7 +658,7 @@ export const FixedBalanceCard = () => {
                       <p className="text-xs text-muted-foreground">{transaction.category}</p>
                     </div>
                     <span className="text-sm font-semibold text-destructive">
-                      {transaction.amount.toLocaleString('pt-BR', {
+                      {Math.abs(transaction.amount).toLocaleString('pt-BR', {
                         style: 'currency',
                         currency: 'BRL'
                       })}
@@ -915,15 +932,16 @@ ENDOFFILE: src\components\dashboard\TransactionsList.tsx
 STARTOFFILE: src\components\dialogs\AddGoalDialog.tsx
 ----------------------------------------
 import { useState } from "react";
+import { Target } from "lucide-react";
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Target } from "lucide-react";
 
 interface AddGoalDialogProps {
   trigger?: React.ReactNode;
@@ -939,7 +957,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
     current_amount: "",
     color: "blue",
     description: "",
-    target_date: ""
+    target_date: "",
+    priority: "5"
   });
   const { toast } = useToast();
 
@@ -972,6 +991,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
 
       const targetAmount = parseFloat(formData.target_amount);
       const currentAmount = formData.current_amount ? parseFloat(formData.current_amount) : 0;
+      const priority = parseInt(formData.priority);
 
       const { error } = await supabase
         .from('investment_goals')
@@ -982,7 +1002,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
           current_amount: currentAmount,
           color: formData.color,
           description: formData.description || null,
-          target_date: formData.target_date || null
+          target_date: formData.target_date || null,
+          priority: priority
         });
 
       if (error) throw error;
@@ -998,7 +1019,8 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
         current_amount: "",
         color: "blue",
         description: "",
-        target_date: ""
+        target_date: "",
+        priority: "5"
       });
       setOpen(false);
       onSuccess?.();
@@ -1015,7 +1037,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
   };
 
   const defaultTrigger = (
-    <Button variant="outline">
+    <Button>
       <Target className="h-4 w-4 mr-2" />
       Nova Meta
     </Button>
@@ -1033,7 +1055,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
             Nova Meta de Investimento
           </DialogTitle>
           <DialogDescription>
-            Crie uma nova meta para acompanhar seus objetivos financeiros.
+            Defina uma meta financeira para acompanhar seu progresso.
           </DialogDescription>
         </DialogHeader>
 
@@ -1042,53 +1064,85 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
             <Label htmlFor="name">Nome da Meta *</Label>
             <Input
               id="name"
-              placeholder="Ex: Casa Própria"
+              placeholder="Ex: Casa própria, Aposentadoria..."
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              required
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="target_amount">Valor Alvo *</Label>
-            <Input
-              id="target_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.target_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="target_amount">Valor Alvo *</Label>
+              <Input
+                id="target_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.target_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="current_amount">Valor Atual</Label>
+              <Input
+                id="current_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.current_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="current_amount">Valor Atual (opcional)</Label>
-            <Input
-              id="current_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.current_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="color">Cor</Label>
-            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma cor" />
-              </SelectTrigger>
-              <SelectContent>
-                {colors.map((color) => (
-                  <SelectItem key={color.value} value={color.value}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full bg-${color.value}-500`} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="color">Cor</Label>
+              <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+                <SelectTrigger id="color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
                       {color.label}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="priority">Prioridade *</Label>
+              <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}>
+                <SelectTrigger id="priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 - Mais Alta</SelectItem>
+                  <SelectItem value="2">2 - Alta</SelectItem>
+                  <SelectItem value="3">3 - Média</SelectItem>
+                  <SelectItem value="4">4 - Baixa</SelectItem>
+                  <SelectItem value="5">5 - Mais Baixa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição (opcional)</Label>
+            <Textarea
+              id="description"
+              placeholder="Adicione detalhes sobre esta meta..."
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              rows={3}
+            />
           </div>
 
           <div className="space-y-2">
@@ -1098,16 +1152,6 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
               type="date"
               value={formData.target_date}
               onChange={(e) => setFormData(prev => ({ ...prev, target_date: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Descrição (opcional)</Label>
-            <Textarea
-              id="description"
-              placeholder="Descrição da meta..."
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
             />
           </div>
 
@@ -1655,8 +1699,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -1688,9 +1731,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     group_id: "personal",
     assigned_to: "self",
     date: format(new Date(), 'yyyy-MM-dd'),
-    notes: "",
     is_recurring: false,
-    recurrence_count: "1",
+    recurrence_count: "2",
     is_fixed: false
   });
   const { toast } = useToast();
@@ -1793,6 +1835,18 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
     }
   }, [formData.group_id]);
 
+  useEffect(() => {
+    if (formData.is_fixed) {
+      setFormData(prev => ({ ...prev, is_recurring: false }));
+    }
+  }, [formData.is_fixed]);
+
+  useEffect(() => {
+    if (formData.is_recurring) {
+      setFormData(prev => ({ ...prev, is_fixed: false }));
+    }
+  }, [formData.is_recurring]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -1805,6 +1859,15 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       return;
     }
 
+    if (formData.is_recurring && (!formData.recurrence_count || parseInt(formData.recurrence_count) < 1)) {
+      toast({
+        title: "Erro",
+        description: "Informe a quantidade de meses para recorrência",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -1812,8 +1875,17 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       if (!user) throw new Error("Usuário não autenticado");
 
       const amount = parseFloat(formData.amount);
-      const recurrenceId = formData.is_recurring ? crypto.randomUUID() : null;
-      const recurrenceCount = formData.is_recurring ? parseInt(formData.recurrence_count) : 1;
+      
+      let recurrenceId = null;
+      let recurrenceCount = 1;
+
+      if (formData.is_fixed) {
+        recurrenceId = crypto.randomUUID();
+        recurrenceCount = 60;
+      } else if (formData.is_recurring) {
+        recurrenceId = crypto.randomUUID();
+        recurrenceCount = parseInt(formData.recurrence_count);
+      }
 
       const transactionsToInsert = [];
 
@@ -1841,15 +1913,18 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
       if (error) throw error;
 
-      const recurrenceText = formData.is_recurring 
-        ? ` (${recurrenceCount} ${recurrenceCount === 1 ? 'mês' : 'meses'})`
-        : '';
-
-      const fixedText = formData.is_fixed ? ' fixo' : '';
+      let successMessage = "";
+      if (formData.is_fixed) {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} fixa adicionada com sucesso! Criada para os próximos 60 meses.`;
+      } else if (formData.is_recurring) {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} recorrente adicionada com sucesso! (${recurrenceCount} ${recurrenceCount === 1 ? 'mês' : 'meses'})`;
+      } else {
+        successMessage = `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`;
+      }
 
       toast({
         title: "Sucesso",
-        description: `${type === "income" ? "Receita" : "Despesa"}${fixedText} adicionada com sucesso!${recurrenceText}`
+        description: successMessage
       });
 
       setFormData({
@@ -1859,9 +1934,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         group_id: "personal",
         assigned_to: "self",
         date: format(new Date(), 'yyyy-MM-dd'),
-        notes: "",
         is_recurring: false,
-        recurrence_count: "1",
+        recurrence_count: "2",
         is_fixed: false
       });
       setOpen(false);
@@ -1924,9 +1998,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             <Label htmlFor="description">Descrição *</Label>
             <Input
               id="description"
-              placeholder="Ex: Aluguel"
+              placeholder="Ex: Salário, Aluguel..."
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              required
             />
           </div>
 
@@ -1937,9 +2012,11 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 id="amount"
                 type="number"
                 step="0.01"
+                min="0"
                 placeholder="0,00"
                 value={formData.amount}
                 onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                required
               />
             </div>
 
@@ -1950,19 +2027,25 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                required
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="category">Categoria *</Label>
-            <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
+            <Select 
+              value={formData.category} 
+              onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+            >
               <SelectTrigger id="category">
                 <SelectValue placeholder="Selecione uma categoria" />
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1970,14 +2053,19 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
           <div className="space-y-2">
             <Label htmlFor="group">Grupo</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value }))}>
+            <Select 
+              value={formData.group_id} 
+              onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value, assigned_to: "self" }))}
+            >
               <SelectTrigger id="group">
-                <SelectValue />
+                <SelectValue placeholder="Pessoal" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="personal">Pessoal</SelectItem>
                 {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1985,10 +2073,13 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
           {formData.group_id !== "personal" && groupUsers.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="assigned_to">Atribuir para</Label>
-              <Select value={formData.assigned_to} onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}>
+              <Label htmlFor="assigned_to">Atribuir a</Label>
+              <Select 
+                value={formData.assigned_to} 
+                onValueChange={(value) => setFormData(prev => ({ ...prev, assigned_to: value }))}
+              >
                 <SelectTrigger id="assigned_to">
-                  <SelectValue />
+                  <SelectValue placeholder="Selecione um membro" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="self">Eu mesmo</SelectItem>
@@ -2002,62 +2093,58 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </div>
           )}
 
-          <div className="space-y-4 pt-4 border-t">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_fixed">Lançamento Fixo</Label>
-                <p className="text-xs text-muted-foreground">
-                  Aparecerá no balanço fixo mensal
-                </p>
-              </div>
-              <Switch
+          <div className="space-y-4 pt-4 border-t-2">
+            <div className="flex items-start gap-3 p-4 border-2 rounded-lg hover:bg-accent/50 transition-colors">
+              <Checkbox
                 id="is_fixed"
                 checked={formData.is_fixed}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_fixed: checked }))}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_fixed: checked as boolean }))}
+                className="mt-1"
               />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_recurring">Lançamento Recorrente</Label>
-                <p className="text-xs text-muted-foreground">
-                  Repetir por vários meses
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="is_fixed" className="text-base font-semibold cursor-pointer">
+                  Lançamento Fixo
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Será criado para os próximos 60 meses (5 anos). Ao excluir, será removido de todos os meses
                 </p>
               </div>
-              <Switch
+            </div>
+
+            <div className="flex items-start gap-3 p-4 border-2 rounded-lg hover:bg-accent/50 transition-colors">
+              <Checkbox
                 id="is_recurring"
                 checked={formData.is_recurring}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_recurring: checked }))}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_recurring: checked as boolean }))}
+                className="mt-1"
               />
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="is_recurring" className="text-base font-semibold cursor-pointer">
+                  Lançamento Recorrente
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Repetir por uma quantidade específica de meses
+                </p>
+              </div>
             </div>
 
             {formData.is_recurring && (
-              <div className="space-y-2 pl-4 border-l-2">
-                <Label htmlFor="recurrence_count">Repetir por quantos meses? *</Label>
+              <div className="space-y-2 pl-4 ml-7 border-l-4 border-primary">
+                <Label htmlFor="recurrence_count" className="font-semibold">Por quantos meses? *</Label>
                 <Input
                   id="recurrence_count"
                   type="number"
-                  min="1"
+                  min="2"
                   max="60"
                   value={formData.recurrence_count}
                   onChange={(e) => setFormData(prev => ({ ...prev, recurrence_count: e.target.value }))}
+                  required
                 />
-                <p className="text-xs text-muted-foreground">
-                  Serão criados {formData.recurrence_count} lançamento(s) mensais
+                <p className="text-sm text-muted-foreground font-medium">
+                  Serão criados {formData.recurrence_count} lançamento(s) mensais consecutivos
                 </p>
               </div>
             )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notes">Observações</Label>
-            <Textarea
-              id="notes"
-              placeholder="Adicione observações..."
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              rows={3}
-            />
           </div>
 
           <div className="flex gap-2 pt-4">
@@ -2107,6 +2194,7 @@ interface InvestmentGoal {
   color: string;
   description?: string;
   target_date?: string;
+  priority: number;
 }
 
 interface EditGoalDialogProps {
@@ -2124,7 +2212,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
     current_amount: "",
     color: "blue",
     description: "",
-    target_date: ""
+    target_date: "",
+    priority: "5"
   });
   const { toast } = useToast();
 
@@ -2145,7 +2234,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
         current_amount: goal.current_amount.toString(),
         color: goal.color || "blue",
         description: goal.description || "",
-        target_date: goal.target_date || ""
+        target_date: goal.target_date || "",
+        priority: (goal.priority || 5).toString()
       });
     }
   }, [goal]);
@@ -2167,6 +2257,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
     try {
       const targetAmount = parseFloat(formData.target_amount);
       const currentAmount = parseFloat(formData.current_amount);
+      const priority = parseInt(formData.priority);
 
       const { error } = await supabase
         .from('investment_goals')
@@ -2176,7 +2267,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
           current_amount: currentAmount,
           color: formData.color,
           description: formData.description || null,
-          target_date: formData.target_date || null
+          target_date: formData.target_date || null,
+          priority: priority
         })
         .eq('id', goal.id);
 
@@ -2219,56 +2311,74 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
             <Label htmlFor="edit-name">Nome da Meta *</Label>
             <Input
               id="edit-name"
-              placeholder="Ex: Casa Própria"
+              placeholder="Ex: Casa própria, Aposentadoria..."
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              required
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="edit-target_amount">Valor Alvo *</Label>
-            <Input
-              id="edit-target_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.target_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-target_amount">Valor Alvo *</Label>
+              <Input
+                id="edit-target_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.target_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-current_amount">Valor Atual</Label>
+              <Input
+                id="edit-current_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.current_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="edit-current_amount">Valor Atual *</Label>
-            <Input
-              id="edit-current_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.current_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-color">Cor</Label>
-            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
-              <SelectTrigger id="edit-color">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {colors.map((color) => (
-                  <SelectItem key={color.value} value={color.value}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-4 h-4 rounded-full" 
-                        style={{ backgroundColor: color.value }}
-                      />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-color">Cor</Label>
+              <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+                <SelectTrigger id="edit-color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
                       {color.label}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-priority">Prioridade *</Label>
+              <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}>
+                <SelectTrigger id="edit-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 - Mais Alta</SelectItem>
+                  <SelectItem value="2">2 - Alta</SelectItem>
+                  <SelectItem value="3">3 - Média</SelectItem>
+                  <SelectItem value="4">4 - Baixa</SelectItem>
+                  <SelectItem value="5">5 - Mais Baixa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -3016,17 +3126,13 @@ ENDOFFILE: src\components\dialogs\InvestmentDetailsModal.tsx
 
 STARTOFFILE: src\components\filters\DateFilter.tsx
 ----------------------------------------
-// Em src/components/filters/DateFilter.tsx
-
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, addMonths } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface DateRange {
   from: Date;
@@ -3039,7 +3145,6 @@ interface DateFilterProps {
 }
 
 export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) => {
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState("current-month");
 
   const presets = [
@@ -3048,8 +3153,8 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
       value: "current-month",
       getRange: () => ({
         from: startOfMonth(new Date()),
-        to: endOfMonth(new Date()),
-      }),
+        to: endOfMonth(new Date())
+      })
     },
     {
       label: "Mês passado",
@@ -3058,9 +3163,9 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const lastMonth = subMonths(new Date(), 1);
         return {
           from: startOfMonth(lastMonth),
-          to: endOfMonth(lastMonth),
+          to: endOfMonth(lastMonth)
         };
-      },
+      }
     },
     {
       label: "Próximo mês",
@@ -3069,100 +3174,104 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const nextMonth = addMonths(new Date(), 1);
         return {
           from: startOfMonth(nextMonth),
-          to: endOfMonth(nextMonth),
+          to: endOfMonth(nextMonth)
         };
-      },
+      }
     },
     {
       label: "Este ano",
       value: "current-year",
       getRange: () => ({
         from: startOfYear(new Date()),
-        to: endOfYear(new Date()),
-      }),
+        to: endOfYear(new Date())
+      })
     },
     {
       label: "Personalizado",
       value: "custom",
-      getRange: () => dateRange,
-    },
+      getRange: () => dateRange
+    }
   ];
 
   const handlePresetChange = (value: string) => {
     setSelectedPreset(value);
     if (value !== "custom") {
-      const preset = presets.find((p) => p.value === value);
+      const preset = presets.find(p => p.value === value);
       if (preset) {
         onDateRangeChange(preset.getRange());
       }
     }
   };
 
-  const formatDateRange = (range: DateRange) => {
-    if (!range.from || !range.to) return "Selecione o período";
-
-    if (format(range.from, "yyyy-MM", { locale: ptBR }) === format(range.to, "yyyy-MM", { locale: ptBR })) {
-      return format(range.from, "MMMM 'de' yyyy", { locale: ptBR });
+  const handleFromDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    if (!isNaN(newDate.getTime())) {
+      onDateRangeChange({ from: newDate, to: dateRange.to });
+      setSelectedPreset("custom");
     }
+  };
 
-    return `${format(range.from, "dd/MM/yy", { locale: ptBR })} - ${format(range.to, "dd/MM/yy", { locale: ptBR })}`;
+  const handleToDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    if (!isNaN(newDate.getTime())) {
+      onDateRangeChange({ from: dateRange.from, to: newDate });
+      setSelectedPreset("custom");
+    }
   };
 
   return (
-    <div className="flex gap-2">
-      <Select value={selectedPreset} onValueChange={handlePresetChange}>
-        <SelectTrigger className="w-[140px]">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {presets.map((preset) => (
-            <SelectItem key={preset.value} value={preset.value}>
-              {preset.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="flex flex-wrap items-end gap-4">
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="preset" className="mb-2 block">Período</Label>
+        <Select value={selectedPreset} onValueChange={handlePresetChange}>
+          <SelectTrigger id="preset" className="w-full sm:w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {presets.map(preset => (
+              <SelectItem key={preset.value} value={preset.value}>
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={cn("w-[240px] justify-start text-left font-normal", !dateRange.from && "text-muted-foreground")}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {formatDateRange(dateRange)}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-auto p-0 date-filter-popover"
-          align="start"
-          side="bottom"
-          sideOffset={4}
-          avoidCollisions={true}
-          collisionPadding={10}
-          onOpenAutoFocus={(e) => e.preventDefault()}
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="date-from" className="mb-2 block">Data Início</Label>
+        <Input
+          id="date-from"
+          type="date"
+          value={format(dateRange.from, 'yyyy-MM-dd')}
+          onChange={handleFromDateChange}
+          className="w-full sm:w-[160px]"
+        />
+      </div>
+
+      <div className="w-full sm:w-auto">
+        <Label htmlFor="date-to" className="mb-2 block">Data Fim</Label>
+        <Input
+          id="date-to"
+          type="date"
+          value={format(dateRange.to, 'yyyy-MM-dd')}
+          onChange={handleToDateChange}
+          className="w-full sm:w-[160px]"
+        />
+      </div>
+
+      {selectedPreset === "custom" && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePresetChange("current-month")}
+          className="w-full sm:w-auto"
         >
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={dateRange.from}
-            selected={{ from: dateRange.from, to: dateRange.to }}
-            onSelect={(range) => {
-              if (range?.from && range?.to) {
-                onDateRangeChange({ from: range.from, to: range.to });
-                setSelectedPreset("custom");
-                setCalendarOpen(false);
-              }
-            }}
-            numberOfMonths={2}
-            locale={ptBR}
-          />
-        </PopoverContent>
-      </Popover>
+          Resetar
+        </Button>
+      )}
     </div>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\filters\DateFilter.tsx
 
@@ -3733,7 +3842,7 @@ const AlertDialogContent = React.forwardRef<
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
         className
       )}
       {...props}
@@ -10369,7 +10478,7 @@ ENDOFFILE: src\pages\Index.tsx
 STARTOFFILE: src\pages\Investments.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign, Trash2, Edit } from "lucide-react";
+import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign, Trash2, Edit, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
@@ -10380,6 +10489,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -10403,6 +10514,7 @@ interface InvestmentGoal {
   color: string;
   description?: string;
   target_date?: string;
+  priority: number;
 }
 
 const Investments = () => {
@@ -10417,7 +10529,12 @@ const Investments = () => {
   const [goalToDelete, setGoalToDelete] = useState<string | null>(null);
   const [editGoalDialogOpen, setEditGoalDialogOpen] = useState(false);
   const [goalToEdit, setGoalToEdit] = useState<InvestmentGoal | null>(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [goalPage, setGoalPage] = useState(0);
   const { toast } = useToast();
+
+  const GOALS_PER_PAGE = 3;
 
   useEffect(() => {
     loadData();
@@ -10452,6 +10569,7 @@ const Investments = () => {
       const { data, error } = await supabase
         .from('investment_goals')
         .select('*')
+        .order('priority', { ascending: true })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -10523,6 +10641,7 @@ const Investments = () => {
       });
 
       await loadGoals();
+      setGoalPage(0);
     } catch (error) {
       console.error('Erro ao remover meta:', error);
       toast({
@@ -10564,6 +10683,28 @@ const Investments = () => {
     setModalOpen(true);
   };
 
+  const paginatedInvestments = investments.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const totalPages = Math.ceil(investments.length / itemsPerPage);
+
+  const paginatedGoals = goals.slice(
+    goalPage * GOALS_PER_PAGE,
+    (goalPage + 1) * GOALS_PER_PAGE
+  );
+
+  const totalGoalPages = Math.ceil(goals.length / GOALS_PER_PAGE);
+
+  const handlePreviousGoals = () => {
+    if (goalPage > 0) setGoalPage(goalPage - 1);
+  };
+
+  const handleNextGoals = () => {
+    if (goalPage < totalGoalPages - 1) setGoalPage(goalPage + 1);
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -10592,7 +10733,7 @@ const Investments = () => {
             </p>
           </div>
           <div className="flex gap-2">
-            <AddGoalDialog onSuccess={loadGoals} />
+            <AddGoalDialog onSuccess={() => { loadGoals(); setGoalPage(0); }} />
             <AddInvestmentDialog 
               trigger={
                 <Button>
@@ -10635,7 +10776,31 @@ const Investments = () => {
                     })}
                   </p>
                 </div>
-                <TrendingUp className="h-8 w-8 text-success" />
+                <PieChart className="h-8 w-8 text-primary" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
+                  <p className={cn(
+                    "text-2xl font-bold",
+                    totalReturn >= 0 ? "text-success" : "text-destructive"
+                  )}>
+                    {(totalCurrentValue - totalInvested).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL'
+                    })}
+                  </p>
+                </div>
+                {totalReturn >= 0 ? (
+                  <TrendingUp className="h-8 w-8 text-success" />
+                ) : (
+                  <TrendingDown className="h-8 w-8 text-destructive" />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -10652,289 +10817,365 @@ const Investments = () => {
                     {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
                   </p>
                 </div>
-                {totalReturn >= 0 ? (
-                  <TrendingUp className="h-8 w-8 text-success" />
-                ) : (
-                  <TrendingDown className="h-8 w-8 text-destructive" />
-                )}
+                <Target className="h-8 w-8 text-primary" />
               </div>
             </CardContent>
           </Card>
+        </div>
 
+        {goals.length > 0 && (
           <Card>
-            <CardContent className="p-6">
+            <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    totalCurrentValue - totalInvested >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {(totalCurrentValue - totalInvested).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
-                    })}
-                  </p>
+                  <CardTitle className="flex items-center gap-2">
+                    <Target className="h-5 w-5" />
+                    Metas de Investimento
+                  </CardTitle>
+                  <CardDescription>Acompanhe o progresso das suas metas</CardDescription>
                 </div>
-                <Target className="h-8 w-8 text-muted-foreground" />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handlePreviousGoals}
+                    disabled={goalPage === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground px-2">
+                    {goalPage + 1} / {totalGoalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleNextGoals}
+                    disabled={goalPage >= totalGoalPages - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Distribuição por Tipo</CardTitle>
-              <CardDescription>
-                Composição da sua carteira de investimentos
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {investmentTypes.length > 0 ? (
-                  investmentTypes.map((type) => {
-                    const { typeTotal, typePercentage } = getTypeData(type);
-                    
-                    return (
-                      <div 
-                        key={type} 
-                        className="space-y-2 cursor-pointer hover:bg-muted/50 p-2 rounded transition-colors"
-                        onClick={() => handleTypeClick(type)}
-                      >
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium">{type}</span>
-                          <span className="text-muted-foreground">
-                            {typePercentage.toFixed(1)}% • {typeTotal.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
-                            })}
-                          </span>
+                {paginatedGoals.map((goal) => {
+                  const progress = (goal.current_amount / goal.target_amount) * 100;
+                  return (
+                    <div key={goal.id} className="p-4 border rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            Prioridade {goal.priority}
+                          </Badge>
+                          <h3 className="font-semibold">{goal.name}</h3>
                         </div>
-                        <Progress value={typePercentage} className="h-2" />
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditGoalClick(goal)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteGoalClick(goal.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <PieChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum investimento cadastrado ainda.</p>
-                    <p className="text-sm">Adicione seu primeiro investimento para ver a distribuição.</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Metas de Investimento</CardTitle>
-              <CardDescription>
-                Progresso das suas metas financeiras
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {goals.length > 0 ? (
-                  goals.map((goal) => {
-                    const progress = (goal.current_amount / goal.target_amount) * 100;
-                    
-                    return (
-                      <div key={goal.id} className="space-y-2 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
-                              style={{ backgroundColor: goal.color || '#3b82f6' }}
-                            />
-                            <span className="font-medium">{goal.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">
-                              {goal.current_amount.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })} / {goal.target_amount.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                              })}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => handleEditGoalClick(goal)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => handleDeleteGoalClick(goal.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
+                      {goal.description && (
+                        <p className="text-sm text-muted-foreground">{goal.description}</p>
+                      )}
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Progresso</span>
+                          <span className="font-semibold">{progress.toFixed(1)}%</span>
                         </div>
                         <Progress value={progress} className="h-2" />
-                        <p className="text-xs text-muted-foreground">
-                          {progress.toFixed(1)}% concluído
-                        </p>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            {goal.current_amount.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                          <span className="font-semibold">
+                            {goal.target_amount.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </span>
+                        </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Target className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhuma meta cadastrada ainda.</p>
-                    <p className="text-sm">Crie sua primeira meta de investimento.</p>
-                  </div>
-                )}
+                      {goal.target_date && (
+                        <p className="text-xs text-muted-foreground">
+                          Meta: {new Date(goal.target_date).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
-        </div>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Todos os Investimentos</CardTitle>
-            <CardDescription>
-              Lista completa dos seus investimentos
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {investments.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
-                  <p className="mb-4">
-                    Comece a construir sua carteira de investimentos adicionando seu primeiro investimento.
-                  </p>
-                  <AddInvestmentDialog onSuccess={loadInvestments} />
+        {investmentTypes.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-5 w-5" />
+                Distribuição por Tipo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {investmentTypes.map(type => {
+                  const { typeTotal, typePercentage } = getTypeData(type);
+                  return (
+                    <Card 
+                      key={type} 
+                      className="cursor-pointer hover:bg-accent/50 transition-colors"
+                      onClick={() => handleTypeClick(type)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold">{type}</h4>
+                            <Badge variant="outline">{typePercentage.toFixed(1)}%</Badge>
+                          </div>
+                          <p className="text-2xl font-bold">
+                            {typeTotal.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            })}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {investments.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Todos os Investimentos</CardTitle>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="items-per-page" className="text-sm">
+                      Itens por página:
+                    </Label>
+                    <Select
+                      value={itemsPerPage.toString()}
+                      onValueChange={(value) => {
+                        setItemsPerPage(parseInt(value));
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger id="items-per-page" className="w-[100px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5</SelectItem>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              ) : (
-                investments.map((investment) => {
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {paginatedInvestments.map((investment) => {
                   const returnValue = investment.current_value - investment.amount;
-                  const returnPercentage = (returnValue / investment.amount) * 100;
+                  const returnPercentage = investment.amount > 0 
+                    ? (returnValue / investment.amount) * 100 
+                    : 0;
 
                   return (
-                    <div
-                      key={investment.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors group"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-medium">{investment.name}</h3>
-                          <Badge variant="outline">{investment.type}</Badge>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <span>
-                            Investido: {investment.amount.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
-                            })}
-                          </span>
-                          <span>•</span>
-                          <span>
-                            Atual: {investment.current_value.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
-                            })}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <div className={cn(
-                            "text-lg font-bold",
-                            returnValue >= 0 ? "text-success" : "text-destructive"
-                          )}>
-                            {returnValue >= 0 ? '+' : ''}
-                            {returnValue.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
-                            })}
+                    <Card key={investment.id} className="group">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="font-semibold">{investment.name}</h4>
+                              <Badge variant="secondary">{investment.type}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <p className="text-muted-foreground">Investido</p>
+                                <p className="font-semibold">
+                                  {investment.amount.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL'
+                                  })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Valor Atual</p>
+                                <p className="font-semibold">
+                                  {investment.current_value.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL'
+                                  })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Rentabilidade</p>
+                                <div className={cn(
+                                  "text-sm",
+                                  returnValue >= 0 ? "text-success" : "text-destructive"
+                                )}>
+                                  {returnPercentage >= 0 ? '+' : ''}{returnPercentage.toFixed(2)}%
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Lucro/Prejuízo</p>
+                                <div className={cn(
+                                  "font-semibold",
+                                  returnValue >= 0 ? "text-success" : "text-destructive"
+                                )}>
+                                  {returnValue >= 0 ? '+' : ''}
+                                  {returnValue.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL'
+                                  })}
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className={cn(
-                            "text-sm",
-                            returnValue >= 0 ? "text-success" : "text-destructive"
-                          )}>
-                            {returnPercentage >= 0 ? '+' : ''}{returnPercentage.toFixed(2)}%
-                          </div>
-                        </div>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleDeleteClick(investment.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => handleDeleteClick(investment.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
                   );
-                })
+                })}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-6">
+                  <p className="text-sm text-muted-foreground">
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, investments.length)} de {investments.length} investimentos
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      Anterior
+                    </Button>
+                    <span className="text-sm px-4">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <PieChart className="h-16 w-16 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
+              <p className="text-muted-foreground mb-4 text-center">
+                Comece a acompanhar seus investimentos agora
+              </p>
+              <AddInvestmentDialog 
+                trigger={
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar Primeiro Investimento
+                  </Button>
+                }
+                onSuccess={loadInvestments}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <InvestmentDetailsModal
+          open={modalOpen}
+          onOpenChange={setModalOpen}
+          type={selectedType}
+          investments={selectedType ? getTypeData(selectedType).typeInvestments : []}
+        />
+
+        <EditGoalDialog
+          goal={goalToEdit}
+          isOpen={editGoalDialogOpen}
+          onClose={handleEditGoalClose}
+          onSuccess={loadGoals}
+        />
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover este investimento? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteConfirm}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                Remover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={deleteGoalDialogOpen} onOpenChange={setDeleteGoalDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteGoalConfirm}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                Remover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      <InvestmentDetailsModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        investments={investments.filter(inv => inv.type === selectedType)} type={""}      />
-
-      <EditGoalDialog
-        goal={goalToEdit}
-        isOpen={editGoalDialogOpen}
-        onClose={handleEditGoalClose}
-        onSuccess={loadGoals}
-      />
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja remover este investimento? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              Remover
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={deleteGoalDialogOpen} onOpenChange={setDeleteGoalDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteGoalConfirm}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              Remover
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </DashboardLayout>
   );
 };
@@ -10979,6 +11220,9 @@ ENDOFFILE: src\pages\NotFound.tsx
 STARTOFFILE: src\pages\Transactions.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "lucide-react";
+import { startOfMonth, endOfMonth } from "date-fns";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
@@ -10987,31 +11231,23 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 interface Transaction {
   id: string;
   description: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   category: string;
   date: string;
   group_id: string | null;
   group_name?: string;
+  is_fixed: boolean;
+  is_recurring: boolean;
+  recurrence_id: string | null;
 }
 
 const Transactions = () => {
@@ -11026,7 +11262,7 @@ const Transactions = () => {
     to: endOfMonth(new Date())
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -11066,7 +11302,10 @@ const Transactions = () => {
         category: t.category,
         date: t.date,
         group_id: t.group_id,
-        group_name: t.groups?.name
+        group_name: t.groups?.name,
+        is_fixed: t.is_fixed || false,
+        is_recurring: t.is_recurring || false,
+        recurrence_id: t.recurrence_id
       })) || [];
 
       setTransactions(formattedData);
@@ -11082,8 +11321,8 @@ const Transactions = () => {
     }
   };
 
-  const handleDeleteClick = (id: string) => {
-    setTransactionToDelete(id);
+  const handleDeleteClick = (transaction: Transaction) => {
+    setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
   };
 
@@ -11091,17 +11330,31 @@ const Transactions = () => {
     if (!transactionToDelete) return;
 
     try {
-      const { error } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', transactionToDelete);
+      if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
+        const { error } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('recurrence_id', transactionToDelete.recurrence_id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: "Sucesso",
-        description: "Transação removida com sucesso",
-      });
+        toast({
+          title: "Sucesso",
+          description: "Lançamento fixo removido de todos os meses com sucesso"
+        });
+      } else {
+        const { error } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', transactionToDelete.id);
+
+        if (error) throw error;
+
+        toast({
+          title: "Sucesso",
+          description: "Transação removida com sucesso"
+        });
+      }
 
       loadTransactions();
     } catch (error) {
@@ -11135,7 +11388,7 @@ const Transactions = () => {
 
   const totalExpense = filteredTransactions
     .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   const balance = totalIncome - totalExpense;
 
@@ -11198,7 +11451,7 @@ const Transactions = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Buscar transações..."
                     value={searchTerm}
@@ -11212,7 +11465,7 @@ const Transactions = () => {
                     <SelectValue placeholder="Tipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos os tipos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="income">Receitas</SelectItem>
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
@@ -11223,7 +11476,7 @@ const Transactions = () => {
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todas categorias</SelectItem>
+                    <SelectItem value="all">Todas</SelectItem>
                     {categories.map(cat => (
                       <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                     ))}
@@ -11235,8 +11488,8 @@ const Transactions = () => {
                     <SelectValue placeholder="Grupo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos os grupos</SelectItem>
-                    <SelectItem value="none">Sem grupo</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="none">Pessoal</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -11250,54 +11503,46 @@ const Transactions = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Receitas</p>
-                  <p className="text-2xl font-bold text-success">
-                    {totalIncome.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
-                    })}
-                  </p>
-                </div>
-                <ArrowUpCircle className="h-8 w-8 text-success" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Total Receitas</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-success">
+                {totalIncome.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL'
+                })}
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Despesas</p>
-                  <p className="text-2xl font-bold text-destructive">
-                    {totalExpense.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
-                    })}
-                  </p>
-                </div>
-                <ArrowDownCircle className="h-8 w-8 text-destructive" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Total Despesas</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-destructive">
+                {totalExpense.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL'
+                })}
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Saldo</p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    balance >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {balance.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
-                    })}
-                  </p>
-                </div>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Saldo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={cn(
+                "text-2xl font-bold",
+                balance >= 0 ? "text-success" : "text-destructive"
+              )}>
+                {balance.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL'
+                })}
               </div>
             </CardContent>
           </Card>
@@ -11305,27 +11550,25 @@ const Transactions = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>
-              Transações ({filteredTransactions.length})
-            </CardTitle>
+            <CardTitle>Transações</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Carregando transações...
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : filteredTransactions.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 Nenhuma transação encontrada
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {filteredTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                    className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
                   >
-                    <div className="flex items-center gap-4 flex-1">
+                    <div className="flex items-center gap-4">
                       <div className={cn(
                         "p-2 rounded-full",
                         transaction.type === "income" 
@@ -11338,9 +11581,20 @@ const Transactions = () => {
                           <ArrowDownCircle className="h-5 w-5" />
                         )}
                       </div>
-                      
-                      <div className="flex-1">
-                        <p className="font-medium">{transaction.description}</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{transaction.description}</p>
+                          {transaction.is_fixed && (
+                            <Badge variant="outline" className="text-xs">
+                              Fixo
+                            </Badge>
+                          )}
+                          {transaction.is_recurring && !transaction.is_fixed && (
+                            <Badge variant="outline" className="text-xs">
+                              Recorrente
+                            </Badge>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="secondary" className="text-xs">
                             {transaction.category}
@@ -11356,14 +11610,13 @@ const Transactions = () => {
                         </div>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
                       <p className={cn(
-                        "text-lg font-semibold",
+                        "font-semibold text-lg",
                         transaction.type === "income" ? "text-success" : "text-destructive"
                       )}>
                         {transaction.type === "income" ? "+" : "-"}
-                        {transaction.amount.toLocaleString('pt-BR', {
+                        {Math.abs(transaction.amount).toLocaleString('pt-BR', {
                           style: 'currency',
                           currency: 'BRL'
                         })}
@@ -11372,7 +11625,7 @@ const Transactions = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDeleteClick(transaction.id)}
+                        onClick={() => handleDeleteClick(transaction)}
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -11390,7 +11643,16 @@ const Transactions = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover esta transação? Esta ação não pode ser desfeita.
+                {transactionToDelete?.is_fixed ? (
+                  <>
+                    Este é um lançamento <strong>fixo</strong>. Ao confirmar, ele será removido de <strong>todos os meses</strong>. 
+                    Esta ação não pode ser desfeita.
+                  </>
+                ) : (
+                  <>
+                    Tem certeza que deseja remover esta transação? Esta ação não pode ser desfeita.
+                  </>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -11399,7 +11661,7 @@ const Transactions = () => {
                 onClick={handleDeleteConfirm}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                Remover
+                Remover{transactionToDelete?.is_fixed ? " de Todos os Meses" : ""}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

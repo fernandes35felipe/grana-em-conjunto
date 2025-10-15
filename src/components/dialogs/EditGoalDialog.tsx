@@ -18,6 +18,7 @@ interface InvestmentGoal {
   color: string;
   description?: string;
   target_date?: string;
+  priority: number;
 }
 
 interface EditGoalDialogProps {
@@ -35,7 +36,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
     current_amount: "",
     color: "blue",
     description: "",
-    target_date: ""
+    target_date: "",
+    priority: "5"
   });
   const { toast } = useToast();
 
@@ -56,7 +58,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
         current_amount: goal.current_amount.toString(),
         color: goal.color || "blue",
         description: goal.description || "",
-        target_date: goal.target_date || ""
+        target_date: goal.target_date || "",
+        priority: (goal.priority || 5).toString()
       });
     }
   }, [goal]);
@@ -78,6 +81,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
     try {
       const targetAmount = parseFloat(formData.target_amount);
       const currentAmount = parseFloat(formData.current_amount);
+      const priority = parseInt(formData.priority);
 
       const { error } = await supabase
         .from('investment_goals')
@@ -87,7 +91,8 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
           current_amount: currentAmount,
           color: formData.color,
           description: formData.description || null,
-          target_date: formData.target_date || null
+          target_date: formData.target_date || null,
+          priority: priority
         })
         .eq('id', goal.id);
 
@@ -130,56 +135,74 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
             <Label htmlFor="edit-name">Nome da Meta *</Label>
             <Input
               id="edit-name"
-              placeholder="Ex: Casa Própria"
+              placeholder="Ex: Casa própria, Aposentadoria..."
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              required
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="edit-target_amount">Valor Alvo *</Label>
-            <Input
-              id="edit-target_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.target_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-target_amount">Valor Alvo *</Label>
+              <Input
+                id="edit-target_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.target_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-current_amount">Valor Atual</Label>
+              <Input
+                id="edit-current_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={formData.current_amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="edit-current_amount">Valor Atual *</Label>
-            <Input
-              id="edit-current_amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.current_amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-color">Cor</Label>
-            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
-              <SelectTrigger id="edit-color">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {colors.map((color) => (
-                  <SelectItem key={color.value} value={color.value}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-4 h-4 rounded-full" 
-                        style={{ backgroundColor: color.value }}
-                      />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-color">Cor</Label>
+              <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+                <SelectTrigger id="edit-color">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
                       {color.label}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-priority">Prioridade *</Label>
+              <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}>
+                <SelectTrigger id="edit-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 - Mais Alta</SelectItem>
+                  <SelectItem value="2">2 - Alta</SelectItem>
+                  <SelectItem value="3">3 - Média</SelectItem>
+                  <SelectItem value="4">4 - Baixa</SelectItem>
+                  <SelectItem value="5">5 - Mais Baixa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">

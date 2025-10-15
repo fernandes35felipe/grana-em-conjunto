@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ interface FixedTransaction {
   amount: number;
   type: 'income' | 'expense';
   category: string;
+  recurrence_id: string;
 }
 
 export const FixedBalanceCard = () => {
@@ -32,15 +33,31 @@ export const FixedBalanceCard = () => {
 
       const { data, error } = await supabase
         .from('transactions')
-        .select('id, description, amount, type, category')
+        .select('id, description, amount, type, category, recurrence_id')
         .eq('user_id', user.id)
         .eq('is_fixed', true)
         .order('amount', { ascending: false });
 
       if (error) throw error;
 
-      const income = data?.filter(t => t.type === 'income') || [];
-      const expenses = data?.filter(t => t.type === 'expense') || [];
+      const uniqueTransactions = new Map<string, FixedTransaction>();
+      
+      data?.forEach(t => {
+        if (!uniqueTransactions.has(t.recurrence_id)) {
+          uniqueTransactions.set(t.recurrence_id, {
+            id: t.id,
+            description: t.description,
+            amount: Number(t.amount),
+            type: t.type as 'income' | 'expense',
+            category: t.category,
+            recurrence_id: t.recurrence_id
+          });
+        }
+      });
+
+      const uniqueArray = Array.from(uniqueTransactions.values());
+      const income = uniqueArray.filter(t => t.type === 'income');
+      const expenses = uniqueArray.filter(t => t.type === 'expense');
 
       setFixedIncome(income);
       setFixedExpenses(expenses);
@@ -85,7 +102,7 @@ export const FixedBalanceCard = () => {
           Balanço Fixo Mensal
         </CardTitle>
         <CardDescription>
-          Receitas e despesas fixas que se repetem mensalmente
+          Receitas e despesas fixas que se repetem todos os meses
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -111,7 +128,7 @@ export const FixedBalanceCard = () => {
               ) : (
                 fixedIncome.map((transaction) => (
                   <div
-                    key={transaction.id}
+                    key={transaction.recurrence_id}
                     className="flex items-center justify-between p-2 rounded-md bg-muted/30"
                   >
                     <div className="flex-1">
@@ -151,7 +168,7 @@ export const FixedBalanceCard = () => {
               ) : (
                 fixedExpenses.map((transaction) => (
                   <div
-                    key={transaction.id}
+                    key={transaction.recurrence_id}
                     className="flex items-center justify-between p-2 rounded-md bg-muted/30"
                   >
                     <div className="flex-1">
@@ -159,7 +176,7 @@ export const FixedBalanceCard = () => {
                       <p className="text-xs text-muted-foreground">{transaction.category}</p>
                     </div>
                     <span className="text-sm font-semibold text-destructive">
-                      {transaction.amount.toLocaleString('pt-BR', {
+                      {Math.abs(transaction.amount).toLocaleString('pt-BR', {
                         style: 'currency',
                         currency: 'BRL'
                       })}
