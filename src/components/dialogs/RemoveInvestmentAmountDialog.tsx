@@ -64,15 +64,14 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
       return;
     }
 
-    // Opcional: Validar se o valor a remover não é maior que o valor atual
-    // if (removalAmount > investment.totalCurrentValue) {
-    //    toast({
-    //     title: "Atenção",
-    //     description: "O valor a remover é maior que o valor atual do investimento.",
-    //     variant: "warning" // Ou destructive se quiser impedir
-    //   });
-    //   // return; // Descomente para impedir
-    // }
+    if (removalAmount > investment.totalCurrentValue) {
+      toast({
+        title: "Atenção",
+        description: "O valor a remover é maior que o valor atual do investimento.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setLoading(true);
 

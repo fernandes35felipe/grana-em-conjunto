@@ -1,12 +1,12 @@
 # Code Merge Output
-Generated at: 2025-10-29T20:38:40.635Z
+Generated at: 2025-10-29T20:41:53.447Z
 Source path: .
 Files processed: 92
-Total lines: 11649
-Total characters: 399974
+Total lines: 11648
+Total characters: 399811
 
 File types:
-  - tsx: 75 files (10.599 lines)
+  - tsx: 75 files (10.598 lines)
   - ts: 8 files (739 lines)
   - json: 5 files (179 lines)
   - js: 2 files (37 lines)
@@ -44,7 +44,7 @@ Project structure & file index:
         - EditGoalDialog.tsx (250 lines)
         - EditGroupDialog.tsx (468 lines)
         - InvestmentDetailsModal.tsx (219 lines)
-        - RemoveInvestmentAmountDialog.tsx (181 lines)
+        - RemoveInvestmentAmountDialog.tsx (180 lines)
       filters/
         - DateFilter.tsx (145 lines)
       groups/
@@ -3281,15 +3281,14 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
       return;
     }
 
-    // Opcional: Validar se o valor a remover não é maior que o valor atual
-    // if (removalAmount > investment.totalCurrentValue) {
-    //    toast({
-    //     title: "Atenção",
-    //     description: "O valor a remover é maior que o valor atual do investimento.",
-    //     variant: "warning" // Ou destructive se quiser impedir
-    //   });
-    //   // return; // Descomente para impedir
-    // }
+    if (removalAmount > investment.totalCurrentValue) {
+      toast({
+        title: "Atenção",
+        description: "O valor a remover é maior que o valor atual do investimento.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setLoading(true);
 
