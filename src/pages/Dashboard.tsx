@@ -8,11 +8,10 @@ import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { startOfMonth, endOfMonth, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
-
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
@@ -29,27 +28,22 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-
   useEffect(() => {
     loadMetrics();
   }, [dateRange]);
-
   const loadMetrics = async () => {
     try {
       setLoading(true);
-
       // Get transactions for the selected period
       const { data: transactions, error: transError } = await supabase
         .from("transactions")
         .select("amount, type, date")
-        .gte("date", dateRange.from?.toISOString().split("T")[0])
-        .lte("date", dateRange.to?.toISOString().split("T")[0]);
-
+        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
       if (transError) throw transError;
 
       // Get investments
       const { data: investments, error: invError } = await supabase.from("investments").select("current_value, amount, created_at");
-
       if (invError) throw invError;
 
       // Calculate metrics
@@ -57,7 +51,6 @@ const Dashboard = () => {
       const expenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
       const totalInvestments = investments?.reduce((sum, inv) => sum + Number(inv.current_value), 0) || 0;
       const balance = income + expenses - totalInvestments;
-
       setMetrics({
         totalBalance: balance,
         totalIncome: income,
@@ -78,7 +71,6 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
@@ -120,6 +112,7 @@ const Dashboard = () => {
                 change={`${metrics.expenseChange}% este mês`}
                 changeType="positive"
               />
+
               <MetricCard
                 title="Investimentos"
                 value={metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
@@ -127,7 +120,6 @@ const Dashboard = () => {
                 change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
               />
-
             </>
           )}
         </div>
@@ -135,9 +127,10 @@ const Dashboard = () => {
         {/* Charts and Recent Transactions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart Placeholder */}
-              <FixedBalanceCard />
+          <FixedBalanceCard />
 
           {/* Recent Transactions */}
+
           <TransactionsList />
         </div>
 
@@ -154,6 +147,7 @@ const Dashboard = () => {
               <AddInvestmentDialog />
               <Button variant="outline" className="h-20 flex flex-col gap-2">
                 <DollarSign className="h-6 w-6" />
+
                 <span className="text-sm">Ver Relatórios</span>
               </Button>
             </div>

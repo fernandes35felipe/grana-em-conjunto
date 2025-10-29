@@ -34,10 +34,12 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     name: "",
     type: "",
     amount: "",
-    current_value: "",
+    quantity: "",
+    unitPrice: "",
+
     group_id: "none",
     goal_id: "none",
-    maturity_date: ""
+    maturity_date: "",
   });
   const { toast } = useToast();
 
@@ -52,114 +54,123 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   const loadGroups = async () => {
     try {
-      const { data, error } = await supabase
-        .from('groups')
-        .select('id, name')
-        .order('name');
-
+      const { data, error } = await supabase.from("groups").select("id, name").order("name");
       if (error) throw error;
       setGroups(data || []);
     } catch (error) {
-      console.error('Erro ao carregar grupos:', error);
+      console.error("Erro ao carregar grupos:", error);
     }
   };
 
   const loadInvestmentGoals = async () => {
     try {
-      const { data, error } = await supabase
-        .from('investment_goals')
-        .select('id, name, target_amount, current_amount')
-        .order('name');
-
+      const { data, error } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
       if (error) throw error;
       setInvestmentGoals(data || []);
     } catch (error) {
-      console.error('Erro ao carregar metas:', error);
+      console.error("Erro ao carregar metas:", error);
     }
   };
 
+  const showQuantityPriceFields = formData.type === "Ações" || formData.type === "FIIs";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.type || !formData.amount) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive"
-      });
-      return;
+
+    let calculatedAmount = 0;
+    let quantity = null;
+    let unitPrice = null;
+
+    if (showQuantityPriceFields) {
+      if (!formData.name || !formData.type || !formData.quantity || !formData.unitPrice) {
+        toast({
+          title: "Erro",
+          description: "Preencha Nome, Tipo, Quantidade e Valor Unitário",
+          variant: "destructive",
+        });
+        return;
+      }
+      quantity = parseFloat(formData.quantity);
+      unitPrice = parseFloat(formData.unitPrice);
+      calculatedAmount = quantity * unitPrice;
+    } else {
+      if (!formData.name || !formData.type || !formData.amount) {
+        toast({
+          title: "Erro",
+          description: "Preencha Nome, Tipo e Valor Investido",
+          variant: "destructive",
+        });
+        return;
+      }
+      calculatedAmount = parseFloat(formData.amount);
     }
 
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const amount = parseFloat(formData.amount);
-      const currentValue = formData.current_value ? parseFloat(formData.current_value) : amount;
-
-      const { error } = await supabase
-        .from('investments')
-        .insert({
-          user_id: user.id,
-          name: formData.name,
-          type: formData.type,
-          amount,
-          current_value: currentValue,
-          group_id: formData.group_id === "none" ? null : formData.group_id,
-          maturity_date: formData.maturity_date || null
-        });
+      const { error } = await supabase.from("investments").insert({
+        user_id: user.id,
+        name: formData.name,
+        type: formData.type,
+        amount: calculatedAmount,
+        current_value: calculatedAmount,
+        quantity: quantity,
+        unit_price: unitPrice,
+        group_id: formData.group_id === "none" ? null : formData.group_id,
+        maturity_date: formData.maturity_date || null,
+      });
 
       if (error) throw error;
 
-      // Update investment goal if selected
       if (formData.goal_id !== "none") {
-        // First get the current goal data
         const { data: goalData, error: fetchError } = await supabase
-          .from('investment_goals')
-          .select('current_amount')
-          .eq('id', formData.goal_id)
+          .from("investment_goals")
+          .select("current_amount")
+          .eq("id", formData.goal_id)
           .single();
-
         if (fetchError) {
-          console.error('Erro ao buscar meta:', fetchError);
+          console.error("Erro ao buscar meta:", fetchError);
         } else {
           const { error: goalError } = await supabase
-            .from('investment_goals')
+            .from("investment_goals")
             .update({
-              current_amount: goalData.current_amount + amount
+              current_amount: goalData.current_amount + calculatedAmount,
             })
-            .eq('id', formData.goal_id);
-
+            .eq("id", formData.goal_id);
           if (goalError) {
-            console.error('Erro ao atualizar meta:', goalError);
+            console.error("Erro ao atualizar meta:", goalError);
           }
         }
       }
 
       toast({
         title: "Sucesso",
-        description: "Investimento adicionado com sucesso!"
+        description: "Investimento adicionado com sucesso!",
       });
-
       setFormData({
         name: "",
         type: "",
         amount: "",
-        current_value: "",
+        quantity: "",
+        unitPrice: "",
+
         group_id: "none",
         goal_id: "none",
-        maturity_date: ""
+        maturity_date: "",
       });
       setOpen(false);
       onSuccess?.();
     } catch (error) {
-      console.error('Erro ao salvar investimento:', error);
+      console.error("Erro ao salvar investimento:", error);
       toast({
         title: "Erro",
         description: "Erro ao salvar o investimento. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -175,18 +186,16 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
+
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PiggyBank className="h-5 w-5 text-primary" />
             Novo Investimento
           </DialogTitle>
-          <DialogDescription>
-            Adicione um novo investimento ao seu portfólio.
-          </DialogDescription>
+
+          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -194,18 +203,22 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             <Label htmlFor="name">Nome do Investimento *</Label>
             <Input
               id="name"
-              placeholder="Ex: Tesouro Selic 2029"
+              placeholder="Ex: Tesouro Selic 2029, ITSA4, MXRF11"
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="type">Tipo *</Label>
-            <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}>
+            <Select
+              value={formData.type}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, type: value, amount: "", quantity: "", unitPrice: "" }))}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
+
               <SelectContent>
                 {investmentTypes.map((type) => (
                   <SelectItem key={type} value={type}>
@@ -216,36 +229,52 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="amount">Valor Investido *</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="current_value">Valor Atual (opcional)</Label>
-            <Input
-              id="current_value"
-              type="number"
-              step="0.01"
-              placeholder="Se não preenchido, será igual ao valor investido"
-              value={formData.current_value}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_value: e.target.value }))}
-            />
-          </div>
+          {showQuantityPriceFields ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quantity">Quantidade *</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="unitPrice">Valor Unitário *</Label>
+                <Input
+                  id="unitPrice"
+                  type="number"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.unitPrice}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, unitPrice: e.target.value }))}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor Investido *</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                placeholder="0,00"
+                value={formData.amount}
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value }))}>
+            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um grupo (opcional)" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="none">Nenhum grupo</SelectItem>
                 {groups.map((group) => (
@@ -259,10 +288,11 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
           <div className="space-y-2">
             <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
-            <Select value={formData.goal_id} onValueChange={(value) => setFormData(prev => ({ ...prev, goal_id: value }))}>
+            <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione uma meta (opcional)" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="none">Nenhuma meta</SelectItem>
                 {investmentGoals.map((goal) => (
@@ -280,24 +310,16 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
               id="maturity_date"
               type="date"
               value={formData.maturity_date}
-              onChange={(e) => setFormData(prev => ({ ...prev, maturity_date: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, maturity_date: e.target.value }))}
             />
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading}
-            >
+
+            <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? "Salvando..." : "Salvar"}
             </Button>
           </div>

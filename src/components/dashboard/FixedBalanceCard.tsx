@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
-
+import { DollarSign, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from "lucide-react"; // Adicionado ChevronLeft, ChevronRight
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button"; // Adicionado Button
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -11,15 +11,19 @@ interface FixedTransaction {
   id: string;
   description: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   category: string;
   recurrence_id: string;
 }
+
+const ITEMS_PER_PAGE = 5; // Limite de itens por página
 
 export const FixedBalanceCard = () => {
   const [fixedIncome, setFixedIncome] = useState<FixedTransaction[]>([]);
   const [fixedExpenses, setFixedExpenses] = useState<FixedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [incomePage, setIncomePage] = useState(1); // Estado para página de receitas
+  const [expensePage, setExpensePage] = useState(1); // Estado para página de despesas
   const { toast } = useToast();
 
   useEffect(() => {
@@ -28,54 +32,73 @@ export const FixedBalanceCard = () => {
 
   const loadFixedTransactions = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('transactions')
-        .select('id, description, amount, type, category, recurrence_id')
-        .eq('user_id', user.id)
-        .eq('is_fixed', true)
-        .order('amount', { ascending: false });
+        .from("transactions")
+        .select("id, description, amount, type, category, recurrence_id")
+        .eq("user_id", user.id)
+        .eq("is_fixed", true)
+        // Ordenar aqui pode ajudar na consistência da paginação
+        .order("description", { ascending: true }); // Ordenando por descrição
 
       if (error) throw error;
 
       const uniqueTransactions = new Map<string, FixedTransaction>();
-      
-      data?.forEach(t => {
+      data?.forEach((t) => {
+        // Garantir que amount seja sempre number
+        const amount = typeof t.amount === "number" ? t.amount : parseFloat(t.amount || "0");
         if (!uniqueTransactions.has(t.recurrence_id)) {
           uniqueTransactions.set(t.recurrence_id, {
             id: t.id,
             description: t.description,
-            amount: Number(t.amount),
-            type: t.type as 'income' | 'expense',
+            amount: amount,
+            type: t.type as "income" | "expense",
             category: t.category,
-            recurrence_id: t.recurrence_id
+            recurrence_id: t.recurrence_id,
           });
         }
       });
 
       const uniqueArray = Array.from(uniqueTransactions.values());
-      const income = uniqueArray.filter(t => t.type === 'income');
-      const expenses = uniqueArray.filter(t => t.type === 'expense');
+      const income = uniqueArray.filter((t) => t.type === "income");
+      const expenses = uniqueArray.filter((t) => t.type === "expense");
 
       setFixedIncome(income);
       setFixedExpenses(expenses);
     } catch (error) {
-      console.error('Erro ao carregar lançamentos fixos:', error);
+      console.error("Erro ao carregar lançamentos fixos:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar balanço fixo",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
 
+  // Cálculos Totais (não mudam com a paginação)
   const totalFixedIncome = fixedIncome.reduce((sum, t) => sum + t.amount, 0);
   const totalFixedExpenses = Math.abs(fixedExpenses.reduce((sum, t) => sum + t.amount, 0));
   const fixedBalance = totalFixedIncome - totalFixedExpenses;
+
+  // Cálculos para Paginação de Receitas
+  const totalIncomePages = Math.ceil(fixedIncome.length / ITEMS_PER_PAGE);
+  const paginatedIncome = fixedIncome.slice((incomePage - 1) * ITEMS_PER_PAGE, incomePage * ITEMS_PER_PAGE);
+
+  // Cálculos para Paginação de Despesas
+  const totalExpensePages = Math.ceil(fixedExpenses.length / ITEMS_PER_PAGE);
+  const paginatedExpenses = fixedExpenses.slice((expensePage - 1) * ITEMS_PER_PAGE, expensePage * ITEMS_PER_PAGE);
+
+  // Funções de Navegação
+  const handlePrevIncomePage = () => setIncomePage((prev) => Math.max(prev - 1, 1));
+  const handleNextIncomePage = () => setIncomePage((prev) => Math.min(prev + 1, totalIncomePages));
+  const handlePrevExpensePage = () => setExpensePage((prev) => Math.max(prev - 1, 1));
+  const handleNextExpensePage = () => setExpensePage((prev) => Math.min(prev + 1, totalExpensePages));
 
   if (loading) {
     return (
@@ -101,12 +124,11 @@ export const FixedBalanceCard = () => {
           <DollarSign className="h-5 w-5" />
           Balanço Fixo Mensal
         </CardTitle>
-        <CardDescription>
-          Receitas e despesas fixas que se repetem todos os meses
-        </CardDescription>
+        <CardDescription>Receitas e despesas fixas que se repetem todos os meses</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-4">
+          {/* Receitas Fixas */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -114,39 +136,62 @@ export const FixedBalanceCard = () => {
                 Receitas Fixas
               </h4>
               <Badge variant="outline" className="text-success">
-                {totalFixedIncome.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                {totalFixedIncome.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </Badge>
             </div>
-            <div className="space-y-2">
-              {fixedIncome.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  Nenhuma receita fixa cadastrada
-                </p>
+            <div className="space-y-2 min-h-[180px]">
+              {" "}
+              {/* Altura mínima para evitar colapso */}
+              {paginatedIncome.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">Nenhuma receita fixa cadastrada</p>
               ) : (
-                fixedIncome.map((transaction) => (
-                  <div
-                    key={transaction.recurrence_id}
-                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                paginatedIncome.map((transaction) => (
+                  <div key={transaction.recurrence_id} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
+                    <div className="flex-1 overflow-hidden mr-2">
+                      <p className="text-sm font-medium truncate" title={transaction.description}>
+                        {transaction.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={transaction.category}>
+                        {transaction.category}
+                      </p>
                     </div>
-                    <span className="text-sm font-semibold text-success">
-                      +{transaction.amount.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                    <span className="text-sm font-semibold text-success whitespace-nowrap">
+                      +
+                      {transaction.amount.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </span>
                   </div>
                 ))
               )}
             </div>
+            {/* Paginação Receitas */}
+            {totalIncomePages > 1 && (
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <span className="text-xs text-muted-foreground">
+                  Página {incomePage} de {totalIncomePages}
+                </span>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handlePrevIncomePage} disabled={incomePage === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleNextIncomePage}
+                  disabled={incomePage === totalIncomePages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
+          {/* Despesas Fixas */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -154,58 +199,77 @@ export const FixedBalanceCard = () => {
                 Despesas Fixas
               </h4>
               <Badge variant="outline" className="text-destructive">
-                -{totalFixedExpenses.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                -
+                {totalFixedExpenses.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </Badge>
             </div>
-            <div className="space-y-2">
-              {fixedExpenses.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  Nenhuma despesa fixa cadastrada
-                </p>
+            <div className="space-y-2 min-h-[180px]">
+              {" "}
+              {/* Altura mínima */}
+              {paginatedExpenses.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa fixa cadastrada</p>
               ) : (
-                fixedExpenses.map((transaction) => (
-                  <div
-                    key={transaction.recurrence_id}
-                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                paginatedExpenses.map((transaction) => (
+                  <div key={transaction.recurrence_id} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
+                    <div className="flex-1 overflow-hidden mr-2">
+                      <p className="text-sm font-medium truncate" title={transaction.description}>
+                        {transaction.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={transaction.category}>
+                        {transaction.category}
+                      </p>
                     </div>
-                    <span className="text-sm font-semibold text-destructive">
-                      {Math.abs(transaction.amount).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                    <span className="text-sm font-semibold text-destructive whitespace-nowrap">
+                      {Math.abs(transaction.amount).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </span>
                   </div>
                 ))
               )}
             </div>
+            {/* Paginação Despesas */}
+            {totalExpensePages > 1 && (
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <span className="text-xs text-muted-foreground">
+                  Página {expensePage} de {totalExpensePages}
+                </span>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handlePrevExpensePage} disabled={expensePage === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleNextExpensePage}
+                  disabled={expensePage === totalExpensePages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Balanço Total */}
         <div className="pt-4 border-t">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold">Balanço Mensal Fixo</h4>
-            <span className={cn(
-              "text-lg font-bold",
-              fixedBalance >= 0 ? "text-success" : "text-destructive"
-            )}>
-              {fixedBalance.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL'
+            <span className={cn("text-lg font-bold", fixedBalance >= 0 ? "text-success" : "text-destructive")}>
+              {fixedBalance.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
               })}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {fixedBalance >= 0 
-              ? "Você terá este valor positivo mensalmente"
-              : "Você terá este déficit mensalmente"
-            }
+            {fixedBalance >= 0
+              ? "Você terá este valor positivo mensalmente (com base nos lançamentos fixos)"
+              : "Você terá este déficit mensalmente (com base nos lançamentos fixos)"}
           </p>
         </div>
       </CardContent>

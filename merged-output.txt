@@ -1,13 +1,13 @@
 # Code Merge Output
-Generated at: 2025-10-15T03:55:01.961Z
+Generated at: 2025-10-29T20:38:40.635Z
 Source path: .
-Files processed: 91
-Total lines: 11355
-Total characters: 380003
+Files processed: 92
+Total lines: 11649
+Total characters: 399974
 
 File types:
-  - tsx: 74 files (10.296 lines)
-  - ts: 8 files (748 lines)
+  - tsx: 75 files (10.599 lines)
+  - ts: 8 files (739 lines)
   - json: 5 files (179 lines)
   - js: 2 files (37 lines)
   - md: 2 files (95 lines)
@@ -33,19 +33,20 @@ Project structure & file index:
       auth/
         - ProtectedRoute.tsx (24 lines)
       dashboard/
-        - FixedBalanceCard.tsx (214 lines)
+        - FixedBalanceCard.tsx (279 lines)
         - MetricCard.tsx (47 lines)
         - TransactionsList.tsx (175 lines)
       dialogs/
         - AddGoalDialog.tsx (246 lines)
         - AddGroupDialog.tsx (190 lines)
-        - AddInvestmentDialog.tsx (308 lines)
+        - AddInvestmentDialog.tsx (331 lines)
         - AddTransactionDialog.tsx (479 lines)
         - EditGoalDialog.tsx (250 lines)
         - EditGroupDialog.tsx (468 lines)
         - InvestmentDetailsModal.tsx (219 lines)
+        - RemoveInvestmentAmountDialog.tsx (181 lines)
       filters/
-        - DateFilter.tsx (146 lines)
+        - DateFilter.tsx (145 lines)
       groups/
         - GroupDetailsModal.tsx (325 lines)
       layout/
@@ -109,17 +110,17 @@ Project structure & file index:
     integrations/
       supabase/
         - client.ts (17 lines)
-        - types.ts (375 lines)
+        - types.ts (366 lines)
     lib/
       - utils.ts (7 lines)
     pages/
       - Auth.tsx (273 lines)
-      - Dashboard.tsx (168 lines)
+      - Dashboard.tsx (162 lines)
       - Groups.tsx (392 lines)
       - Index.tsx (138 lines)
-      - Investments.tsx (704 lines)
+      - Investments.tsx (775 lines)
       - NotFound.tsx (28 lines)
-      - Transactions.tsx (453 lines)
+      - Transactions.tsx (423 lines)
 ================================================================================
 
 STARTOFFILE: components.json
@@ -481,10 +482,10 @@ ENDOFFILE: src\components\auth\ProtectedRoute.tsx
 STARTOFFILE: src\components\dashboard\FixedBalanceCard.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
-
+import { DollarSign, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from "lucide-react"; // Adicionado ChevronLeft, ChevronRight
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button"; // Adicionado Button
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -493,15 +494,19 @@ interface FixedTransaction {
   id: string;
   description: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   category: string;
   recurrence_id: string;
 }
+
+const ITEMS_PER_PAGE = 5; // Limite de itens por página
 
 export const FixedBalanceCard = () => {
   const [fixedIncome, setFixedIncome] = useState<FixedTransaction[]>([]);
   const [fixedExpenses, setFixedExpenses] = useState<FixedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [incomePage, setIncomePage] = useState(1); // Estado para página de receitas
+  const [expensePage, setExpensePage] = useState(1); // Estado para página de despesas
   const { toast } = useToast();
 
   useEffect(() => {
@@ -510,54 +515,73 @@ export const FixedBalanceCard = () => {
 
   const loadFixedTransactions = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('transactions')
-        .select('id, description, amount, type, category, recurrence_id')
-        .eq('user_id', user.id)
-        .eq('is_fixed', true)
-        .order('amount', { ascending: false });
+        .from("transactions")
+        .select("id, description, amount, type, category, recurrence_id")
+        .eq("user_id", user.id)
+        .eq("is_fixed", true)
+        // Ordenar aqui pode ajudar na consistência da paginação
+        .order("description", { ascending: true }); // Ordenando por descrição
 
       if (error) throw error;
 
       const uniqueTransactions = new Map<string, FixedTransaction>();
-      
-      data?.forEach(t => {
+      data?.forEach((t) => {
+        // Garantir que amount seja sempre number
+        const amount = typeof t.amount === "number" ? t.amount : parseFloat(t.amount || "0");
         if (!uniqueTransactions.has(t.recurrence_id)) {
           uniqueTransactions.set(t.recurrence_id, {
             id: t.id,
             description: t.description,
-            amount: Number(t.amount),
-            type: t.type as 'income' | 'expense',
+            amount: amount,
+            type: t.type as "income" | "expense",
             category: t.category,
-            recurrence_id: t.recurrence_id
+            recurrence_id: t.recurrence_id,
           });
         }
       });
 
       const uniqueArray = Array.from(uniqueTransactions.values());
-      const income = uniqueArray.filter(t => t.type === 'income');
-      const expenses = uniqueArray.filter(t => t.type === 'expense');
+      const income = uniqueArray.filter((t) => t.type === "income");
+      const expenses = uniqueArray.filter((t) => t.type === "expense");
 
       setFixedIncome(income);
       setFixedExpenses(expenses);
     } catch (error) {
-      console.error('Erro ao carregar lançamentos fixos:', error);
+      console.error("Erro ao carregar lançamentos fixos:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar balanço fixo",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
 
+  // Cálculos Totais (não mudam com a paginação)
   const totalFixedIncome = fixedIncome.reduce((sum, t) => sum + t.amount, 0);
   const totalFixedExpenses = Math.abs(fixedExpenses.reduce((sum, t) => sum + t.amount, 0));
   const fixedBalance = totalFixedIncome - totalFixedExpenses;
+
+  // Cálculos para Paginação de Receitas
+  const totalIncomePages = Math.ceil(fixedIncome.length / ITEMS_PER_PAGE);
+  const paginatedIncome = fixedIncome.slice((incomePage - 1) * ITEMS_PER_PAGE, incomePage * ITEMS_PER_PAGE);
+
+  // Cálculos para Paginação de Despesas
+  const totalExpensePages = Math.ceil(fixedExpenses.length / ITEMS_PER_PAGE);
+  const paginatedExpenses = fixedExpenses.slice((expensePage - 1) * ITEMS_PER_PAGE, expensePage * ITEMS_PER_PAGE);
+
+  // Funções de Navegação
+  const handlePrevIncomePage = () => setIncomePage((prev) => Math.max(prev - 1, 1));
+  const handleNextIncomePage = () => setIncomePage((prev) => Math.min(prev + 1, totalIncomePages));
+  const handlePrevExpensePage = () => setExpensePage((prev) => Math.max(prev - 1, 1));
+  const handleNextExpensePage = () => setExpensePage((prev) => Math.min(prev + 1, totalExpensePages));
 
   if (loading) {
     return (
@@ -583,12 +607,11 @@ export const FixedBalanceCard = () => {
           <DollarSign className="h-5 w-5" />
           Balanço Fixo Mensal
         </CardTitle>
-        <CardDescription>
-          Receitas e despesas fixas que se repetem todos os meses
-        </CardDescription>
+        <CardDescription>Receitas e despesas fixas que se repetem todos os meses</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-4">
+          {/* Receitas Fixas */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -596,39 +619,62 @@ export const FixedBalanceCard = () => {
                 Receitas Fixas
               </h4>
               <Badge variant="outline" className="text-success">
-                {totalFixedIncome.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                {totalFixedIncome.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </Badge>
             </div>
-            <div className="space-y-2">
-              {fixedIncome.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  Nenhuma receita fixa cadastrada
-                </p>
+            <div className="space-y-2 min-h-[180px]">
+              {" "}
+              {/* Altura mínima para evitar colapso */}
+              {paginatedIncome.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">Nenhuma receita fixa cadastrada</p>
               ) : (
-                fixedIncome.map((transaction) => (
-                  <div
-                    key={transaction.recurrence_id}
-                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                paginatedIncome.map((transaction) => (
+                  <div key={transaction.recurrence_id} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
+                    <div className="flex-1 overflow-hidden mr-2">
+                      <p className="text-sm font-medium truncate" title={transaction.description}>
+                        {transaction.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={transaction.category}>
+                        {transaction.category}
+                      </p>
                     </div>
-                    <span className="text-sm font-semibold text-success">
-                      +{transaction.amount.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                    <span className="text-sm font-semibold text-success whitespace-nowrap">
+                      +
+                      {transaction.amount.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </span>
                   </div>
                 ))
               )}
             </div>
+            {/* Paginação Receitas */}
+            {totalIncomePages > 1 && (
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <span className="text-xs text-muted-foreground">
+                  Página {incomePage} de {totalIncomePages}
+                </span>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handlePrevIncomePage} disabled={incomePage === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleNextIncomePage}
+                  disabled={incomePage === totalIncomePages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
+          {/* Despesas Fixas */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -636,64 +682,84 @@ export const FixedBalanceCard = () => {
                 Despesas Fixas
               </h4>
               <Badge variant="outline" className="text-destructive">
-                -{totalFixedExpenses.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                -
+                {totalFixedExpenses.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </Badge>
             </div>
-            <div className="space-y-2">
-              {fixedExpenses.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  Nenhuma despesa fixa cadastrada
-                </p>
+            <div className="space-y-2 min-h-[180px]">
+              {" "}
+              {/* Altura mínima */}
+              {paginatedExpenses.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa fixa cadastrada</p>
               ) : (
-                fixedExpenses.map((transaction) => (
-                  <div
-                    key={transaction.recurrence_id}
-                    className="flex items-center justify-between p-2 rounded-md bg-muted/30"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.category}</p>
+                paginatedExpenses.map((transaction) => (
+                  <div key={transaction.recurrence_id} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
+                    <div className="flex-1 overflow-hidden mr-2">
+                      <p className="text-sm font-medium truncate" title={transaction.description}>
+                        {transaction.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={transaction.category}>
+                        {transaction.category}
+                      </p>
                     </div>
-                    <span className="text-sm font-semibold text-destructive">
-                      {Math.abs(transaction.amount).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                    <span className="text-sm font-semibold text-destructive whitespace-nowrap">
+                      {Math.abs(transaction.amount).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </span>
                   </div>
                 ))
               )}
             </div>
+            {/* Paginação Despesas */}
+            {totalExpensePages > 1 && (
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <span className="text-xs text-muted-foreground">
+                  Página {expensePage} de {totalExpensePages}
+                </span>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handlePrevExpensePage} disabled={expensePage === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleNextExpensePage}
+                  disabled={expensePage === totalExpensePages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Balanço Total */}
         <div className="pt-4 border-t">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold">Balanço Mensal Fixo</h4>
-            <span className={cn(
-              "text-lg font-bold",
-              fixedBalance >= 0 ? "text-success" : "text-destructive"
-            )}>
-              {fixedBalance.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL'
+            <span className={cn("text-lg font-bold", fixedBalance >= 0 ? "text-success" : "text-destructive")}>
+              {fixedBalance.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
               })}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {fixedBalance >= 0 
-              ? "Você terá este valor positivo mensalmente"
-              : "Você terá este déficit mensalmente"
-            }
+            {fixedBalance >= 0
+              ? "Você terá este valor positivo mensalmente (com base nos lançamentos fixos)"
+              : "Você terá este déficit mensalmente (com base nos lançamentos fixos)"}
           </p>
         </div>
       </CardContent>
     </Card>
   );
 };
+
 ----------------------------------------
 ENDOFFILE: src\components\dashboard\FixedBalanceCard.tsx
 
@@ -1413,10 +1479,12 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     name: "",
     type: "",
     amount: "",
-    current_value: "",
+    quantity: "",
+    unitPrice: "",
+
     group_id: "none",
     goal_id: "none",
-    maturity_date: ""
+    maturity_date: "",
   });
   const { toast } = useToast();
 
@@ -1431,114 +1499,123 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   const loadGroups = async () => {
     try {
-      const { data, error } = await supabase
-        .from('groups')
-        .select('id, name')
-        .order('name');
-
+      const { data, error } = await supabase.from("groups").select("id, name").order("name");
       if (error) throw error;
       setGroups(data || []);
     } catch (error) {
-      console.error('Erro ao carregar grupos:', error);
+      console.error("Erro ao carregar grupos:", error);
     }
   };
 
   const loadInvestmentGoals = async () => {
     try {
-      const { data, error } = await supabase
-        .from('investment_goals')
-        .select('id, name, target_amount, current_amount')
-        .order('name');
-
+      const { data, error } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
       if (error) throw error;
       setInvestmentGoals(data || []);
     } catch (error) {
-      console.error('Erro ao carregar metas:', error);
+      console.error("Erro ao carregar metas:", error);
     }
   };
 
+  const showQuantityPriceFields = formData.type === "Ações" || formData.type === "FIIs";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.type || !formData.amount) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive"
-      });
-      return;
+
+    let calculatedAmount = 0;
+    let quantity = null;
+    let unitPrice = null;
+
+    if (showQuantityPriceFields) {
+      if (!formData.name || !formData.type || !formData.quantity || !formData.unitPrice) {
+        toast({
+          title: "Erro",
+          description: "Preencha Nome, Tipo, Quantidade e Valor Unitário",
+          variant: "destructive",
+        });
+        return;
+      }
+      quantity = parseFloat(formData.quantity);
+      unitPrice = parseFloat(formData.unitPrice);
+      calculatedAmount = quantity * unitPrice;
+    } else {
+      if (!formData.name || !formData.type || !formData.amount) {
+        toast({
+          title: "Erro",
+          description: "Preencha Nome, Tipo e Valor Investido",
+          variant: "destructive",
+        });
+        return;
+      }
+      calculatedAmount = parseFloat(formData.amount);
     }
 
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const amount = parseFloat(formData.amount);
-      const currentValue = formData.current_value ? parseFloat(formData.current_value) : amount;
-
-      const { error } = await supabase
-        .from('investments')
-        .insert({
-          user_id: user.id,
-          name: formData.name,
-          type: formData.type,
-          amount,
-          current_value: currentValue,
-          group_id: formData.group_id === "none" ? null : formData.group_id,
-          maturity_date: formData.maturity_date || null
-        });
+      const { error } = await supabase.from("investments").insert({
+        user_id: user.id,
+        name: formData.name,
+        type: formData.type,
+        amount: calculatedAmount,
+        current_value: calculatedAmount,
+        quantity: quantity,
+        unit_price: unitPrice,
+        group_id: formData.group_id === "none" ? null : formData.group_id,
+        maturity_date: formData.maturity_date || null,
+      });
 
       if (error) throw error;
 
-      // Update investment goal if selected
       if (formData.goal_id !== "none") {
-        // First get the current goal data
         const { data: goalData, error: fetchError } = await supabase
-          .from('investment_goals')
-          .select('current_amount')
-          .eq('id', formData.goal_id)
+          .from("investment_goals")
+          .select("current_amount")
+          .eq("id", formData.goal_id)
           .single();
-
         if (fetchError) {
-          console.error('Erro ao buscar meta:', fetchError);
+          console.error("Erro ao buscar meta:", fetchError);
         } else {
           const { error: goalError } = await supabase
-            .from('investment_goals')
+            .from("investment_goals")
             .update({
-              current_amount: goalData.current_amount + amount
+              current_amount: goalData.current_amount + calculatedAmount,
             })
-            .eq('id', formData.goal_id);
-
+            .eq("id", formData.goal_id);
           if (goalError) {
-            console.error('Erro ao atualizar meta:', goalError);
+            console.error("Erro ao atualizar meta:", goalError);
           }
         }
       }
 
       toast({
         title: "Sucesso",
-        description: "Investimento adicionado com sucesso!"
+        description: "Investimento adicionado com sucesso!",
       });
-
       setFormData({
         name: "",
         type: "",
         amount: "",
-        current_value: "",
+        quantity: "",
+        unitPrice: "",
+
         group_id: "none",
         goal_id: "none",
-        maturity_date: ""
+        maturity_date: "",
       });
       setOpen(false);
       onSuccess?.();
     } catch (error) {
-      console.error('Erro ao salvar investimento:', error);
+      console.error("Erro ao salvar investimento:", error);
       toast({
         title: "Erro",
         description: "Erro ao salvar o investimento. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -1554,18 +1631,16 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
+
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PiggyBank className="h-5 w-5 text-primary" />
             Novo Investimento
           </DialogTitle>
-          <DialogDescription>
-            Adicione um novo investimento ao seu portfólio.
-          </DialogDescription>
+
+          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1573,18 +1648,22 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             <Label htmlFor="name">Nome do Investimento *</Label>
             <Input
               id="name"
-              placeholder="Ex: Tesouro Selic 2029"
+              placeholder="Ex: Tesouro Selic 2029, ITSA4, MXRF11"
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="type">Tipo *</Label>
-            <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}>
+            <Select
+              value={formData.type}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, type: value, amount: "", quantity: "", unitPrice: "" }))}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
+
               <SelectContent>
                 {investmentTypes.map((type) => (
                   <SelectItem key={type} value={type}>
@@ -1595,36 +1674,52 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="amount">Valor Investido *</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              value={formData.amount}
-              onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="current_value">Valor Atual (opcional)</Label>
-            <Input
-              id="current_value"
-              type="number"
-              step="0.01"
-              placeholder="Se não preenchido, será igual ao valor investido"
-              value={formData.current_value}
-              onChange={(e) => setFormData(prev => ({ ...prev, current_value: e.target.value }))}
-            />
-          </div>
+          {showQuantityPriceFields ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quantity">Quantidade *</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="unitPrice">Valor Unitário *</Label>
+                <Input
+                  id="unitPrice"
+                  type="number"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.unitPrice}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, unitPrice: e.target.value }))}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor Investido *</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                placeholder="0,00"
+                value={formData.amount}
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData(prev => ({ ...prev, group_id: value }))}>
+            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um grupo (opcional)" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="none">Nenhum grupo</SelectItem>
                 {groups.map((group) => (
@@ -1638,10 +1733,11 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
           <div className="space-y-2">
             <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
-            <Select value={formData.goal_id} onValueChange={(value) => setFormData(prev => ({ ...prev, goal_id: value }))}>
+            <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione uma meta (opcional)" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="none">Nenhuma meta</SelectItem>
                 {investmentGoals.map((goal) => (
@@ -1659,24 +1755,16 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
               id="maturity_date"
               type="date"
               value={formData.maturity_date}
-              onChange={(e) => setFormData(prev => ({ ...prev, maturity_date: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, maturity_date: e.target.value }))}
             />
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading}
-            >
+
+            <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? "Salvando..." : "Salvar"}
             </Button>
           </div>
@@ -1685,6 +1773,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     </Dialog>
   );
 };
+
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddInvestmentDialog.tsx
 
@@ -3124,11 +3213,196 @@ export const InvestmentDetailsModal = ({
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\InvestmentDetailsModal.tsx
 
+STARTOFFILE: src\components\dialogs\RemoveInvestmentAmountDialog.tsx
+----------------------------------------
+// src/components/dialogs/RemoveInvestmentAmountDialog.tsx
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea"; // Adicionado
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { MinusCircle } from "lucide-react";
+import { format } from "date-fns";
+
+// Usaremos a interface AggregatedInvestment para tipar o investimento alvo
+interface AggregatedInvestment {
+  name: string;
+  type: string;
+  totalAmountInvested: number;
+  totalCurrentValue: number;
+  totalQuantity: number | null;
+  averagePrice: number | null;
+  firstInvestedAt: string;
+  recordIds: string[];
+}
+
+interface RemoveInvestmentAmountDialogProps {
+  investment: AggregatedInvestment | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSuccess }: RemoveInvestmentAmountDialogProps) => {
+  const [loading, setLoading] = useState(false);
+  const [amountToRemove, setAmountToRemove] = useState("");
+  const [removalDate, setRemovalDate] = useState(format(new Date(), "yyyy-MM-dd")); // Novo
+  const { toast } = useToast();
+
+  // Reset form when dialog opens or investment changes
+  useEffect(() => {
+    if (isOpen) {
+      setAmountToRemove("");
+      setRemovalDate(format(new Date(), "yyyy-MM-dd"));
+    }
+  }, [isOpen, investment]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!investment || !amountToRemove) {
+      toast({
+        title: "Erro",
+        description: "Informe o valor a ser removido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const removalAmount = parseFloat(amountToRemove);
+    if (isNaN(removalAmount) || removalAmount <= 0) {
+      toast({
+        title: "Erro",
+        description: "O valor a ser removido deve ser positivo",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Opcional: Validar se o valor a remover não é maior que o valor atual
+    // if (removalAmount > investment.totalCurrentValue) {
+    //    toast({
+    //     title: "Atenção",
+    //     description: "O valor a remover é maior que o valor atual do investimento.",
+    //     variant: "warning" // Ou destructive se quiser impedir
+    //   });
+    //   // return; // Descomente para impedir
+    // }
+
+    setLoading(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      // Criar um NOVO registro com valor NEGATIVO
+      const { error } = await supabase.from("investments").insert({
+        user_id: user.id,
+        name: investment.name, // Mesmo nome
+        type: investment.type, // Mesmo tipo
+        amount: -removalAmount, // Valor negativo
+        current_value: -removalAmount, // Valor atual negativo também
+        quantity: null, // Quantidade nula para simples remoção de valor
+        unit_price: null, // Preço unitário nulo
+        created_at: new Date(removalDate + "T00:00:00").toISOString(), // Usa a data selecionada
+        // maturity_date e group_id podem ser nulos aqui
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: `Valor de ${removalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} removido de ${
+          investment.name
+        }!`,
+      });
+      onClose(); // Fecha o modal
+      onSuccess?.(); // Recarrega os dados na página
+    } catch (error) {
+      console.error("Erro ao remover valor do investimento:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover valor. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!investment) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MinusCircle className="h-5 w-5 text-destructive" />
+            Remover Valor do Investimento
+          </DialogTitle>
+          <DialogDescription>Remova um valor específico de "{investment.name}". Isso criará um registro negativo.</DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Investimento:</p>
+            <p className="text-sm text-muted-foreground">
+              {investment.name} ({investment.type})
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Valor Atual: {investment.totalCurrentValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="amountToRemove">Valor a Remover *</Label>
+            <Input
+              id="amountToRemove"
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="0,00"
+              value={amountToRemove}
+              onChange={(e) => setAmountToRemove(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="removalDate">Data da Remoção *</Label>
+            <Input id="removalDate" type="date" value={removalDate} onChange={(e) => setRemovalDate(e.target.value)} required />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive" // Usar variante destrutiva para ação de remoção
+              className="flex-1"
+              disabled={loading}
+            >
+              {loading ? "Removendo..." : "Confirmar Remoção"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\dialogs\RemoveInvestmentAmountDialog.tsx
+
 STARTOFFILE: src\components\filters\DateFilter.tsx
 ----------------------------------------
 import { useState } from "react";
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, addMonths } from "date-fns";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -3146,15 +3420,14 @@ interface DateFilterProps {
 
 export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) => {
   const [selectedPreset, setSelectedPreset] = useState("current-month");
-
   const presets = [
     {
       label: "Este mês",
       value: "current-month",
       getRange: () => ({
         from: startOfMonth(new Date()),
-        to: endOfMonth(new Date())
-      })
+        to: endOfMonth(new Date()),
+      }),
     },
     {
       label: "Mês passado",
@@ -3163,9 +3436,9 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const lastMonth = subMonths(new Date(), 1);
         return {
           from: startOfMonth(lastMonth),
-          to: endOfMonth(lastMonth)
+          to: endOfMonth(lastMonth),
         };
-      }
+      },
     },
     {
       label: "Próximo mês",
@@ -3174,61 +3447,61 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
         const nextMonth = addMonths(new Date(), 1);
         return {
           from: startOfMonth(nextMonth),
-          to: endOfMonth(nextMonth)
+          to: endOfMonth(nextMonth),
         };
-      }
+      },
     },
     {
       label: "Este ano",
       value: "current-year",
       getRange: () => ({
         from: startOfYear(new Date()),
-        to: endOfYear(new Date())
-      })
+        to: endOfYear(new Date()),
+      }),
     },
     {
       label: "Personalizado",
       value: "custom",
-      getRange: () => dateRange
-    }
+      getRange: () => dateRange,
+    },
   ];
-
   const handlePresetChange = (value: string) => {
     setSelectedPreset(value);
     if (value !== "custom") {
-      const preset = presets.find(p => p.value === value);
+      const preset = presets.find((p) => p.value === value);
       if (preset) {
         onDateRangeChange(preset.getRange());
       }
     }
   };
-
   const handleFromDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
+    // Força a data a ser interpretada no fuso horário local
+    const newDate = new Date(e.target.value + "T00:00:00");
     if (!isNaN(newDate.getTime())) {
       onDateRangeChange({ from: newDate, to: dateRange.to });
       setSelectedPreset("custom");
     }
   };
-
   const handleToDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
+    // Força a data a ser interpretada no fuso horário local
+    const newDate = new Date(e.target.value + "T00:00:00");
     if (!isNaN(newDate.getTime())) {
       onDateRangeChange({ from: dateRange.from, to: newDate });
       setSelectedPreset("custom");
     }
   };
-
   return (
     <div className="flex flex-wrap items-end gap-4">
       <div className="w-full sm:w-auto">
-        <Label htmlFor="preset" className="mb-2 block">Período</Label>
+        <Label htmlFor="preset" className="mb-2 block">
+          Período
+        </Label>
         <Select value={selectedPreset} onValueChange={handlePresetChange}>
           <SelectTrigger id="preset" className="w-full sm:w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {presets.map(preset => (
+            {presets.map((preset) => (
               <SelectItem key={preset.value} value={preset.value}>
                 {preset.label}
               </SelectItem>
@@ -3238,40 +3511,41 @@ export const DateFilter = ({ dateRange, onDateRangeChange }: DateFilterProps) =>
       </div>
 
       <div className="w-full sm:w-auto">
-        <Label htmlFor="date-from" className="mb-2 block">Data Início</Label>
+        <Label htmlFor="date-from" className="mb-2 block">
+          Data Início
+        </Label>
         <Input
           id="date-from"
           type="date"
-          value={format(dateRange.from, 'yyyy-MM-dd')}
+          value={format(dateRange.from, "yyyy-MM-dd")}
           onChange={handleFromDateChange}
           className="w-full sm:w-[160px]"
         />
       </div>
 
       <div className="w-full sm:w-auto">
-        <Label htmlFor="date-to" className="mb-2 block">Data Fim</Label>
+        <Label htmlFor="date-to" className="mb-2 block">
+          Data Fim
+        </Label>
+
         <Input
           id="date-to"
           type="date"
-          value={format(dateRange.to, 'yyyy-MM-dd')}
+          value={format(dateRange.to, "yyyy-MM-dd")}
           onChange={handleToDateChange}
           className="w-full sm:w-[160px]"
         />
       </div>
 
       {selectedPreset === "custom" && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handlePresetChange("current-month")}
-          className="w-full sm:w-auto"
-        >
+        <Button variant="outline" size="sm" onClick={() => handlePresetChange("current-month")} className="w-full sm:w-auto">
           Resetar
         </Button>
       )}
     </div>
   );
 };
+
 ----------------------------------------
 ENDOFFILE: src\components\filters\DateFilter.tsx
 
@@ -9076,381 +9350,372 @@ ENDOFFILE: src\integrations\supabase\client.ts
 
 STARTOFFILE: src\integrations\supabase\types.ts
 ----------------------------------------
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
   __InternalSupabase: {
-    PostgrestVersion: "13.0.4"
-  }
+    PostgrestVersion: "13.0.4";
+  };
   public: {
     Tables: {
       group_members: {
         Row: {
-          group_id: string
-          id: string
-          is_admin: boolean
-          joined_at: string
-          user_id: string
-        }
+          group_id: string;
+          id: string;
+          is_admin: boolean;
+          joined_at: string;
+          user_id: string;
+        };
         Insert: {
-          group_id: string
-          id?: string
-          is_admin?: boolean
-          joined_at?: string
-          user_id: string
-        }
+          group_id: string;
+          id?: string;
+          is_admin?: boolean;
+          joined_at?: string;
+          user_id: string;
+        };
         Update: {
-          group_id?: string
-          id?: string
-          is_admin?: boolean
-          joined_at?: string
-          user_id?: string
-        }
+          group_id?: string;
+          id?: string;
+          is_admin?: boolean;
+          joined_at?: string;
+          user_id?: string;
+        };
         Relationships: [
           {
-            foreignKeyName: "group_members_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+            foreignKeyName: "group_members_group_id_fkey";
+            columns: ["group_id"];
+            isOneToOne: false;
+            referencedRelation: "groups";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       groups: {
         Row: {
-          color: string | null
-          created_at: string
-          created_by: string
-          description: string | null
-          id: string
-          name: string
-          updated_at: string
-        }
+          color: string | null;
+          created_at: string;
+          created_by: string;
+          description: string | null;
+          id: string;
+          name: string;
+          updated_at: string;
+        };
         Insert: {
-          color?: string | null
-          created_at?: string
-          created_by: string
-          description?: string | null
-          id?: string
-          name: string
-          updated_at?: string
-        }
+          color?: string | null;
+          created_at?: string;
+          created_by: string;
+          description?: string | null;
+          id?: string;
+          name: string;
+          updated_at?: string;
+        };
         Update: {
-          color?: string | null
-          created_at?: string
-          created_by?: string
-          description?: string | null
-          id?: string
-          name?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
+          color?: string | null;
+          created_at?: string;
+          created_by?: string;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       investment_goals: {
         Row: {
-          color: string | null
-          created_at: string
-          current_amount: number
-          description: string | null
-          id: string
-          name: string
-          target_amount: number
-          target_date: string | null
-          updated_at: string
-          user_id: string
-        }
+          color: string | null;
+          created_at: string;
+          current_amount: number;
+          description: string | null;
+          id: string;
+          name: string;
+          target_amount: number;
+          target_date: string | null;
+          updated_at: string;
+          user_id: string;
+        };
         Insert: {
-          color?: string | null
-          created_at?: string
-          current_amount?: number
-          description?: string | null
-          id?: string
-          name: string
-          target_amount: number
-          target_date?: string | null
-          updated_at?: string
-          user_id: string
-        }
+          color?: string | null;
+          created_at?: string;
+          current_amount?: number;
+          description?: string | null;
+          id?: string;
+          name: string;
+          target_amount: number;
+          target_date?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
         Update: {
-          color?: string | null
-          created_at?: string
-          current_amount?: number
-          description?: string | null
-          id?: string
-          name?: string
-          target_amount?: number
-          target_date?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
+          color?: string | null;
+          created_at?: string;
+          current_amount?: number;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          target_amount?: number;
+          target_date?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       investments: {
         Row: {
-          amount: number
-          created_at: string
-          current_value: number
-          group_id: string | null
-          id: string
-          maturity_date: string | null
-          name: string
-          type: string
-          updated_at: string
-          user_id: string
-        }
+          amount: number;
+          created_at: string;
+          current_value: number;
+          group_id: string | null;
+          id: string;
+          maturity_date: string | null;
+          name: string;
+          type: string;
+          updated_at: string;
+          user_id: string;
+          quantity: number | null;
+          unit_price: number | null;
+        };
         Insert: {
-          amount: number
-          created_at?: string
-          current_value: number
-          group_id?: string | null
-          id?: string
-          maturity_date?: string | null
-          name: string
-          type: string
-          updated_at?: string
-          user_id: string
-        }
+          amount: number;
+          created_at?: string;
+          current_value: number;
+          group_id?: string | null;
+          id?: string;
+          maturity_date?: string | null;
+          name: string;
+          type: string;
+          updated_at?: string;
+          user_id: string;
+          quantity: number | null;
+          unit_price: number | null;
+        };
         Update: {
-          amount?: number
-          created_at?: string
-          current_value?: number
-          group_id?: string | null
-          id?: string
-          maturity_date?: string | null
-          name?: string
-          type?: string
-          updated_at?: string
-          user_id?: string
-        }
+          amount?: number;
+          created_at?: string;
+          current_value?: number;
+          group_id?: string | null;
+          id?: string;
+          maturity_date?: string | null;
+          name?: string;
+          type?: string;
+          updated_at?: string;
+          user_id?: string;
+          quantity: number | null;
+          unit_price: number | null;
+        };
         Relationships: [
           {
-            foreignKeyName: "investments_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+            foreignKeyName: "investments_group_id_fkey";
+            columns: ["group_id"];
+            isOneToOne: false;
+            referencedRelation: "groups";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       profiles: {
         Row: {
-          avatar_url: string | null
-          created_at: string
-          full_name: string | null
-          id: string
-          updated_at: string
-          user_id: string
-        }
+          avatar_url: string | null;
+          created_at: string;
+          full_name: string | null;
+          id: string;
+          updated_at: string;
+          user_id: string;
+        };
         Insert: {
-          avatar_url?: string | null
-          created_at?: string
-          full_name?: string | null
-          id?: string
-          updated_at?: string
-          user_id: string
-        }
+          avatar_url?: string | null;
+          created_at?: string;
+          full_name?: string | null;
+          id?: string;
+          updated_at?: string;
+          user_id: string;
+        };
         Update: {
-          avatar_url?: string | null
-          created_at?: string
-          full_name?: string | null
-          id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
+          avatar_url?: string | null;
+          created_at?: string;
+          full_name?: string | null;
+          id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       transactions: {
         Row: {
-          amount: number
-          category: string
-          created_at: string
-          date: string
-          description: string
-          group_id: string | null
-          id: string
-          type: string
-          updated_at: string
-          user_id: string
-        }
+          amount: number;
+          category: string;
+          created_at: string;
+          date: string;
+          description: string;
+          group_id: string | null;
+          id: string;
+          type: string;
+          updated_at: string;
+          user_id: string;
+        };
         Insert: {
-          amount: number
-          category: string
-          created_at?: string
-          date?: string
-          description: string
-          group_id?: string | null
-          id?: string
-          type: string
-          updated_at?: string
-          user_id: string
-        }
+          amount: number;
+          category: string;
+          created_at?: string;
+          date?: string;
+          description: string;
+          group_id?: string | null;
+          id?: string;
+          type: string;
+          updated_at?: string;
+          user_id: string;
+        };
         Update: {
-          amount?: number
-          category?: string
-          created_at?: string
-          date?: string
-          description?: string
-          group_id?: string | null
-          id?: string
-          type?: string
-          updated_at?: string
-          user_id?: string
-        }
+          amount?: number;
+          category?: string;
+          created_at?: string;
+          date?: string;
+          description?: string;
+          group_id?: string | null;
+          id?: string;
+          type?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
         Relationships: [
           {
-            foreignKeyName: "transactions_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-    }
+            foreignKeyName: "transactions_group_id_fkey";
+            columns: ["group_id"];
+            isOneToOne: false;
+            referencedRelation: "groups";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+    };
     Views: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Functions: {
       is_group_creator: {
-        Args: { _group_id: string }
-        Returns: boolean
-      }
+        Args: { _group_id: string };
+        Returns: boolean;
+      };
       is_group_member: {
-        Args: { _group_id: string }
-        Returns: boolean
-      }
-    }
+        Args: { _group_id: string };
+        Returns: boolean;
+      };
+    };
     Enums: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-}
+      [_ in never]: never;
+    };
+  };
+};
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never = never
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
       DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
+      Row: infer R;
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+  ? (DefaultSchema["Tables"] & DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+      Row: infer R;
+    }
+    ? R
     : never
+  : never;
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never = never
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
+      Insert: infer I;
     }
     ? I
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+      Insert: infer I;
+    }
+    ? I
     : never
+  : never;
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never = never
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
+      Update: infer U;
     }
     ? U
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+      Update: infer U;
+    }
+    ? U
     : never
+  : never;
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never = never
 > = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
+  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  : never;
 
 export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+  PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"] | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never = never
 > = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
+  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  : never;
+
 ----------------------------------------
 ENDOFFILE: src\integrations\supabase\types.ts
 
@@ -9774,11 +10039,10 @@ import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { startOfMonth, endOfMonth, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
-
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
@@ -9795,27 +10059,22 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-
   useEffect(() => {
     loadMetrics();
   }, [dateRange]);
-
   const loadMetrics = async () => {
     try {
       setLoading(true);
-
       // Get transactions for the selected period
       const { data: transactions, error: transError } = await supabase
         .from("transactions")
         .select("amount, type, date")
-        .gte("date", dateRange.from?.toISOString().split("T")[0])
-        .lte("date", dateRange.to?.toISOString().split("T")[0]);
-
+        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
       if (transError) throw transError;
 
       // Get investments
       const { data: investments, error: invError } = await supabase.from("investments").select("current_value, amount, created_at");
-
       if (invError) throw invError;
 
       // Calculate metrics
@@ -9823,7 +10082,6 @@ const Dashboard = () => {
       const expenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
       const totalInvestments = investments?.reduce((sum, inv) => sum + Number(inv.current_value), 0) || 0;
       const balance = income + expenses - totalInvestments;
-
       setMetrics({
         totalBalance: balance,
         totalIncome: income,
@@ -9844,7 +10102,6 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
@@ -9886,6 +10143,7 @@ const Dashboard = () => {
                 change={`${metrics.expenseChange}% este mês`}
                 changeType="positive"
               />
+
               <MetricCard
                 title="Investimentos"
                 value={metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
@@ -9893,7 +10151,6 @@ const Dashboard = () => {
                 change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
               />
-
             </>
           )}
         </div>
@@ -9901,9 +10158,10 @@ const Dashboard = () => {
         {/* Charts and Recent Transactions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart Placeholder */}
-              <FixedBalanceCard />
+          <FixedBalanceCard />
 
           {/* Recent Transactions */}
+
           <TransactionsList />
         </div>
 
@@ -9920,6 +10178,7 @@ const Dashboard = () => {
               <AddInvestmentDialog />
               <Button variant="outline" className="h-20 flex flex-col gap-2">
                 <DollarSign className="h-6 w-6" />
+
                 <span className="text-sm">Ver Relatórios</span>
               </Button>
             </div>
@@ -10477,26 +10736,47 @@ ENDOFFILE: src\pages\Index.tsx
 
 STARTOFFILE: src\pages\Investments.tsx
 ----------------------------------------
-import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, PieChart, Plus, Target, DollarSign, Trash2, Edit, ChevronLeft, ChevronRight } from "lucide-react";
-
+import { useState, useEffect, useMemo } from "react";
+import {
+  TrendingUp,
+  TrendingDown,
+  PieChart,
+  Plus,
+  Target,
+  DollarSign,
+  Trash2,
+  Edit,
+  ChevronLeft,
+  ChevronRight,
+  MinusCircle,
+} from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { AddGoalDialog } from "@/components/dialogs/AddGoalDialog";
 import { EditGoalDialog } from "@/components/dialogs/EditGoalDialog";
 import { InvestmentDetailsModal } from "@/components/dialogs/InvestmentDetailsModal";
+import { RemoveInvestmentAmountDialog } from "@/components/dialogs/RemoveInvestmentAmountDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
-interface Investment {
+interface InvestmentRecord {
   id: string;
   name: string;
   type: string;
@@ -10504,6 +10784,20 @@ interface Investment {
   current_value: number;
   maturity_date?: string;
   created_at: string;
+  quantity: number | null;
+  unit_price: number | null;
+}
+
+interface AggregatedInvestment {
+  name: string;
+  type: string;
+  totalAmountInvested: number;
+  totalCurrentValue: number;
+  totalQuantity: number | null;
+  averagePrice: number | null;
+  firstInvestedAt: string;
+  recordIds: string[];
+  totalAmountForAvgPrice?: number;
 }
 
 interface InvestmentGoal {
@@ -10518,7 +10812,7 @@ interface InvestmentGoal {
 }
 
 const Investments = () => {
-  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [allInvestments, setAllInvestments] = useState<InvestmentRecord[]>([]);
   const [goals, setGoals] = useState<InvestmentGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -10532,6 +10826,7 @@ const Investments = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [goalPage, setGoalPage] = useState(0);
+  const [adjustmentTarget, setAdjustmentTarget] = useState<AggregatedInvestment | null>(null);
   const { toast } = useToast();
 
   const GOALS_PER_PAGE = 3;
@@ -10541,6 +10836,7 @@ const Investments = () => {
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
     await Promise.all([loadInvestments(), loadGoals()]);
     setLoading(false);
   };
@@ -10548,38 +10844,95 @@ const Investments = () => {
   const loadInvestments = async () => {
     try {
       const { data, error } = await supabase
-        .from('investments')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+        .from("investments")
+        .select("*")
+        .order("name", { ascending: true })
+        .order("created_at", { ascending: true });
       if (error) throw error;
-      setInvestments(data || []);
+      setAllInvestments(data || []);
     } catch (error) {
-      console.error('Erro ao carregar investimentos:', error);
+      console.error("Erro ao carregar investimentos:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar investimentos",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
 
+  const aggregatedInvestments = useMemo(() => {
+    const aggregationMap = new Map<string, AggregatedInvestment>();
+
+    allInvestments.forEach((record) => {
+      const existing = aggregationMap.get(record.name);
+      const isStockOrFII = record.type === "Ações" || record.type === "FIIs";
+
+      if (existing) {
+        existing.totalAmountInvested += record.amount;
+        existing.totalCurrentValue += record.current_value;
+        existing.recordIds.push(record.id);
+
+        if (isStockOrFII && record.quantity !== null && record.quantity !== 0) {
+          existing.totalAmountForAvgPrice = (existing.totalAmountForAvgPrice ?? 0) + record.amount;
+          existing.totalQuantity = (existing.totalQuantity ?? 0) + record.quantity;
+        }
+
+        if (new Date(record.created_at) < new Date(existing.firstInvestedAt)) {
+          existing.firstInvestedAt = record.created_at;
+        }
+      } else {
+        let initialQuantity = null;
+        let initialAveragePrice = null;
+        let initialAmountForAvg = 0;
+
+        if (isStockOrFII && record.quantity !== null && record.quantity !== 0) {
+          initialQuantity = record.quantity;
+          initialAmountForAvg = record.amount;
+          initialAveragePrice = record.unit_price ?? record.amount / record.quantity;
+        }
+
+        aggregationMap.set(record.name, {
+          name: record.name,
+          type: record.type,
+          totalAmountInvested: record.amount,
+          totalCurrentValue: record.current_value,
+          totalQuantity: initialQuantity,
+          averagePrice: initialAveragePrice,
+          firstInvestedAt: record.created_at,
+          recordIds: [record.id],
+          totalAmountForAvgPrice: initialAmountForAvg,
+        });
+      }
+    });
+
+    aggregationMap.forEach((agg) => {
+      if (agg.totalQuantity !== null && agg.totalQuantity !== 0 && agg.totalAmountForAvgPrice !== undefined) {
+        agg.averagePrice = agg.totalAmountForAvgPrice / agg.totalQuantity;
+      } else if (agg.totalQuantity === 0) {
+        agg.averagePrice = 0;
+      } else {
+        agg.averagePrice = null;
+      }
+    });
+
+    return Array.from(aggregationMap.values());
+  }, [allInvestments]);
+
   const loadGoals = async () => {
     try {
       const { data, error } = await supabase
-        .from('investment_goals')
-        .select('*')
-        .order('priority', { ascending: true })
-        .order('created_at', { ascending: false });
-
+        .from("investment_goals")
+        .select("*")
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: false });
       if (error) throw error;
       setGoals(data || []);
     } catch (error) {
-      console.error('Erro ao carregar metas:', error);
+      console.error("Erro ao carregar metas:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar metas de investimento",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -10591,27 +10944,21 @@ const Investments = () => {
 
   const handleDeleteConfirm = async () => {
     if (!investmentToDelete) return;
-
     try {
-      const { error } = await supabase
-        .from('investments')
-        .delete()
-        .eq('id', investmentToDelete);
-
+      const { error } = await supabase.from("investments").delete().eq("id", investmentToDelete);
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Investimento removido com sucesso!"
+        description: "Registro de investimento removido com sucesso!",
       });
-
       await loadInvestments();
     } catch (error) {
-      console.error('Erro ao remover investimento:', error);
+      console.error("Erro ao remover investimento:", error);
       toast({
         title: "Erro",
-        description: "Erro ao remover o investimento. Tente novamente.",
-        variant: "destructive"
+        description: "Erro ao remover o registro. Tente novamente.",
+        variant: "destructive",
       });
     } finally {
       setDeleteDialogOpen(false);
@@ -10626,28 +10973,22 @@ const Investments = () => {
 
   const handleDeleteGoalConfirm = async () => {
     if (!goalToDelete) return;
-
     try {
-      const { error } = await supabase
-        .from('investment_goals')
-        .delete()
-        .eq('id', goalToDelete);
-
+      const { error } = await supabase.from("investment_goals").delete().eq("id", goalToDelete);
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Meta removida com sucesso!"
+        description: "Meta removida com sucesso!",
       });
-
       await loadGoals();
       setGoalPage(0);
     } catch (error) {
-      console.error('Erro ao remover meta:', error);
+      console.error("Erro ao remover meta:", error);
       toast({
         title: "Erro",
         description: "Erro ao remover a meta. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setDeleteGoalDialogOpen(false);
@@ -10665,17 +11006,17 @@ const Investments = () => {
     setGoalToEdit(null);
   };
 
-  const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
-  const totalCurrentValue = investments.reduce((sum, inv) => sum + inv.current_value, 0);
+  const totalInvested = allInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+  const totalCurrentValue = allInvestments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
 
-  const investmentTypes = [...new Set(investments.map(inv => inv.type))];
-  
+  const investmentTypes = [...new Set(aggregatedInvestments.map((inv) => inv.type))];
+
   const getTypeData = (type: string) => {
-    const typeInvestments = investments.filter(inv => inv.type === type);
-    const typeTotal = typeInvestments.reduce((sum, inv) => sum + inv.current_value, 0);
+    const typeInvestmentsRaw = allInvestments.filter((inv) => inv.type === type);
+    const typeTotal = aggregatedInvestments.filter((inv) => inv.type === type).reduce((sum, inv) => sum + inv.totalCurrentValue, 0);
     const typePercentage = totalCurrentValue > 0 ? (typeTotal / totalCurrentValue) * 100 : 0;
-    return { typeInvestments, typeTotal, typePercentage };
+    return { typeInvestments: typeInvestmentsRaw, typeTotal, typePercentage };
   };
 
   const handleTypeClick = (type: string) => {
@@ -10683,18 +11024,10 @@ const Investments = () => {
     setModalOpen(true);
   };
 
-  const paginatedInvestments = investments.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedAggregatedInvestments = aggregatedInvestments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(aggregatedInvestments.length / itemsPerPage);
 
-  const totalPages = Math.ceil(investments.length / itemsPerPage);
-
-  const paginatedGoals = goals.slice(
-    goalPage * GOALS_PER_PAGE,
-    (goalPage + 1) * GOALS_PER_PAGE
-  );
-
+  const paginatedGoals = goals.slice(goalPage * GOALS_PER_PAGE, (goalPage + 1) * GOALS_PER_PAGE);
   const totalGoalPages = Math.ceil(goals.length / GOALS_PER_PAGE);
 
   const handlePreviousGoals = () => {
@@ -10712,7 +11045,7 @@ const Investments = () => {
           <div className="animate-pulse space-y-4">
             <div className="h-8 bg-muted rounded w-1/4"></div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {[1,2,3,4].map(i => (
+              {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-24 bg-muted rounded"></div>
               ))}
             </div>
@@ -10728,13 +11061,16 @@ const Investments = () => {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
-            <p className="text-muted-foreground">
-              Acompanhe o desempenho da sua carteira de investimentos
-            </p>
+            <p className="text-muted-foreground">Acompanhe o desempenho da sua carteira de investimentos</p>
           </div>
           <div className="flex gap-2">
-            <AddGoalDialog onSuccess={() => { loadGoals(); setGoalPage(0); }} />
-            <AddInvestmentDialog 
+            <AddGoalDialog
+              onSuccess={() => {
+                loadGoals();
+                setGoalPage(0);
+              }}
+            />
+            <AddInvestmentDialog
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
@@ -10753,9 +11089,9 @@ const Investments = () => {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Total Investido</p>
                   <p className="text-2xl font-bold">
-                    {totalInvested.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
+                    {totalInvested.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
                     })}
                   </p>
                 </div>
@@ -10770,9 +11106,9 @@ const Investments = () => {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Valor Atual</p>
                   <p className="text-2xl font-bold">
-                    {totalCurrentValue.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
+                    {totalCurrentValue.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
                     })}
                   </p>
                 </div>
@@ -10786,21 +11122,14 @@ const Investments = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    totalReturn >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {(totalCurrentValue - totalInvested).toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
+                  <p className={cn("text-2xl font-bold", totalReturn >= 0 ? "text-success" : "text-destructive")}>
+                    {(totalCurrentValue - totalInvested).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
                     })}
                   </p>
                 </div>
-                {totalReturn >= 0 ? (
-                  <TrendingUp className="h-8 w-8 text-success" />
-                ) : (
-                  <TrendingDown className="h-8 w-8 text-destructive" />
-                )}
+                {totalReturn >= 0 ? <TrendingUp className="h-8 w-8 text-success" /> : <TrendingDown className="h-8 w-8 text-destructive" />}
               </div>
             </CardContent>
           </Card>
@@ -10810,11 +11139,9 @@ const Investments = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Rentabilidade</p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    totalReturn >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
+                  <p className={cn("text-2xl font-bold", totalReturn >= 0 ? "text-success" : "text-destructive")}>
+                    {totalReturn >= 0 ? "+" : ""}
+                    {totalReturn.toFixed(2)}%
                   </p>
                 </div>
                 <Target className="h-8 w-8 text-primary" />
@@ -10835,23 +11162,13 @@ const Investments = () => {
                   <CardDescription>Acompanhe o progresso das suas metas</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handlePreviousGoals}
-                    disabled={goalPage === 0}
-                  >
+                  <Button variant="outline" size="icon" onClick={handlePreviousGoals} disabled={goalPage === 0}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <span className="text-sm text-muted-foreground px-2">
                     {goalPage + 1} / {totalGoalPages}
                   </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleNextGoals}
-                    disabled={goalPage >= totalGoalPages - 1}
-                  >
+                  <Button variant="outline" size="icon" onClick={handleNextGoals} disabled={goalPage >= totalGoalPages - 1}>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -10871,25 +11188,15 @@ const Investments = () => {
                           <h3 className="font-semibold">{goal.name}</h3>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditGoalClick(goal)}
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => handleEditGoalClick(goal)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteGoalClick(goal.id)}
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteGoalClick(goal.id)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
                       </div>
-                      {goal.description && (
-                        <p className="text-sm text-muted-foreground">{goal.description}</p>
-                      )}
+                      {goal.description && <p className="text-sm text-muted-foreground">{goal.description}</p>}
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Progresso</span>
@@ -10898,23 +11205,21 @@ const Investments = () => {
                         <Progress value={progress} className="h-2" />
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">
-                            {goal.current_amount.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
+                            {goal.current_amount.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
                             })}
                           </span>
                           <span className="font-semibold">
-                            {goal.target_amount.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
+                            {goal.target_amount.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
                             })}
                           </span>
                         </div>
                       </div>
                       {goal.target_date && (
-                        <p className="text-xs text-muted-foreground">
-                          Meta: {new Date(goal.target_date).toLocaleDateString('pt-BR')}
-                        </p>
+                        <p className="text-xs text-muted-foreground">Meta: {new Date(goal.target_date).toLocaleDateString("pt-BR")}</p>
                       )}
                     </div>
                   );
@@ -10934,14 +11239,10 @@ const Investments = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {investmentTypes.map(type => {
+                {investmentTypes.map((type) => {
                   const { typeTotal, typePercentage } = getTypeData(type);
                   return (
-                    <Card 
-                      key={type} 
-                      className="cursor-pointer hover:bg-accent/50 transition-colors"
-                      onClick={() => handleTypeClick(type)}
-                    >
+                    <Card key={type} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => handleTypeClick(type)}>
                       <CardContent className="p-4">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
@@ -10949,9 +11250,9 @@ const Investments = () => {
                             <Badge variant="outline">{typePercentage.toFixed(1)}%</Badge>
                           </div>
                           <p className="text-2xl font-bold">
-                            {typeTotal.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
+                            {typeTotal.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
                             })}
                           </p>
                         </div>
@@ -10964,11 +11265,11 @@ const Investments = () => {
           </Card>
         )}
 
-        {investments.length > 0 ? (
+        {aggregatedInvestments.length > 0 ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Todos os Investimentos</CardTitle>
+                <CardTitle>Meus Ativos</CardTitle>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="items-per-page" className="text-sm">
@@ -10997,73 +11298,110 @@ const Investments = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {paginatedInvestments.map((investment) => {
-                  const returnValue = investment.current_value - investment.amount;
-                  const returnPercentage = investment.amount > 0 
-                    ? (returnValue / investment.amount) * 100 
-                    : 0;
+                {paginatedAggregatedInvestments.map((aggInvestment) => {
+                  const totalReturnValue = aggInvestment.totalCurrentValue - aggInvestment.totalAmountInvested;
+                  const totalReturnPercentage =
+                    aggInvestment.totalAmountInvested > 0 ? (totalReturnValue / aggInvestment.totalAmountInvested) * 100 : 0;
+                  const isStockOrFII = aggInvestment.type === "Ações" || aggInvestment.type === "FIIs";
 
                   return (
-                    <Card key={investment.id} className="group">
+                    <Card key={aggInvestment.name} className="group">
                       <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-semibold">{investment.name}</h4>
-                              <Badge variant="secondary">{investment.type}</Badge>
+                              <h4 className="font-semibold">{aggInvestment.name}</h4>
+                              <Badge variant="secondary">{aggInvestment.type}</Badge>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-1 text-sm">
                               <div>
-                                <p className="text-muted-foreground">Investido</p>
-                                <p className="font-semibold">
-                                  {investment.amount.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL'
+                                <p className="text-muted-foreground truncate">Total Investido</p>
+                                <p className="font-semibold truncate">
+                                  {aggInvestment.totalAmountInvested.toLocaleString("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
                                   })}
                                 </p>
                               </div>
+
+                              {isStockOrFII && (
+                                <div>
+                                  <p className="text-muted-foreground truncate">Quantidade</p>
+                                  <p className="font-semibold truncate">{aggInvestment.totalQuantity}</p>
+                                </div>
+                              )}
+
+                              {isStockOrFII && aggInvestment.averagePrice !== null && (
+                                <div>
+                                  <p className="text-muted-foreground truncate">Preço Médio</p>
+                                  <p className="font-semibold truncate">
+                                    {aggInvestment.averagePrice.toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL",
+                                    })}
+                                  </p>
+                                </div>
+                              )}
+
+                              {!isStockOrFII && <div className="hidden md:block"></div>}
+                              {!isStockOrFII && <div className="hidden md:block"></div>}
+
                               <div>
-                                <p className="text-muted-foreground">Valor Atual</p>
-                                <p className="font-semibold">
-                                  {investment.current_value.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL'
+                                <p className="text-muted-foreground truncate">Valor Atual</p>
+                                <p className="font-semibold truncate">
+                                  {aggInvestment.totalCurrentValue.toLocaleString("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
                                   })}
                                 </p>
                               </div>
+
                               <div>
-                                <p className="text-muted-foreground">Rentabilidade</p>
-                                <div className={cn(
-                                  "text-sm",
-                                  returnValue >= 0 ? "text-success" : "text-destructive"
-                                )}>
-                                  {returnPercentage >= 0 ? '+' : ''}{returnPercentage.toFixed(2)}%
+                                <p className="text-muted-foreground truncate">Rentabilidade</p>
+                                <div
+                                  className={cn("font-semibold truncate", totalReturnPercentage >= 0 ? "text-success" : "text-destructive")}
+                                >
+                                  {totalReturnPercentage >= 0 ? "+" : ""}
+                                  {totalReturnPercentage.toFixed(2)}%
                                 </div>
                               </div>
+
                               <div>
-                                <p className="text-muted-foreground">Lucro/Prejuízo</p>
-                                <div className={cn(
-                                  "font-semibold",
-                                  returnValue >= 0 ? "text-success" : "text-destructive"
-                                )}>
-                                  {returnValue >= 0 ? '+' : ''}
-                                  {returnValue.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL'
+                                <p className="text-muted-foreground truncate">Lucro/Prejuízo</p>
+                                <div className={cn("font-semibold truncate", totalReturnValue >= 0 ? "text-success" : "text-destructive")}>
+                                  {totalReturnValue >= 0 ? "+" : ""}
+                                  {totalReturnValue.toLocaleString("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
                                   })}
                                 </div>
                               </div>
                             </div>
                           </div>
 
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => handleDeleteClick(investment.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
+                              onClick={() => setAdjustmentTarget(aggInvestment)}
+                              title="Remover valor específico"
+                            >
+                              <MinusCircle className="h-4 w-4" />
+                            </Button>
+
+                            {aggInvestment.recordIds.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
+                                onClick={() => handleDeleteClick(aggInvestment.recordIds[aggInvestment.recordIds.length - 1])}
+                                title="Remover último registro adicionado"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -11074,15 +11412,11 @@ const Investments = () => {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6">
                   <p className="text-sm text-muted-foreground">
-                    Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, investments.length)} de {investments.length} investimentos
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, aggregatedInvestments.length)}{" "}
+                    de {aggregatedInvestments.length} ativos
                   </p>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(currentPage - 1)}
-                      disabled={currentPage === 1}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1}>
                       Anterior
                     </Button>
                     <span className="text-sm px-4">
@@ -11106,14 +11440,12 @@ const Investments = () => {
             <CardContent className="flex flex-col items-center justify-center py-12">
               <PieChart className="h-16 w-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
-              <p className="text-muted-foreground mb-4 text-center">
-                Comece a acompanhar seus investimentos agora
-              </p>
-              <AddInvestmentDialog 
+              <p className="text-muted-foreground mb-4 text-center">Comece a acompanhar seus investimentos agora</p>
+              <AddInvestmentDialog
                 trigger={
                   <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Primeiro Investimento
+                    {" "}
+                    <Plus className="h-4 w-4 mr-2" /> Adicionar Primeiro Investimento{" "}
                   </Button>
                 }
                 onSuccess={loadInvestments}
@@ -11129,27 +11461,19 @@ const Investments = () => {
           investments={selectedType ? getTypeData(selectedType).typeInvestments : []}
         />
 
-        <EditGoalDialog
-          goal={goalToEdit}
-          isOpen={editGoalDialogOpen}
-          onClose={handleEditGoalClose}
-          onSuccess={loadGoals}
-        />
+        <EditGoalDialog goal={goalToEdit} isOpen={editGoalDialogOpen} onClose={handleEditGoalClose} onSuccess={loadGoals} />
 
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover este investimento? Esta ação não pode ser desfeita.
+                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteConfirm}
-                className="bg-destructive hover:bg-destructive/90"
-              >
+              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">
                 Remover
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -11160,27 +11484,33 @@ const Investments = () => {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
-              <AlertDialogDescription>
-                Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.
-              </AlertDialogDescription>
+              <AlertDialogDescription>Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteGoalConfirm}
-                className="bg-destructive hover:bg-destructive/90"
-              >
+              <AlertDialogAction onClick={handleDeleteGoalConfirm} className="bg-destructive hover:bg-destructive/90">
                 Remover
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <RemoveInvestmentAmountDialog
+          investment={adjustmentTarget}
+          isOpen={!!adjustmentTarget}
+          onClose={() => setAdjustmentTarget(null)}
+          onSuccess={() => {
+            loadInvestments();
+            setAdjustmentTarget(null);
+          }}
+        />
       </div>
     </DashboardLayout>
   );
 };
 
 export default Investments;
+
 ----------------------------------------
 ENDOFFILE: src\pages\Investments.tsx
 
@@ -11221,8 +11551,7 @@ STARTOFFILE: src\pages\Transactions.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
 import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "lucide-react";
-import { startOfMonth, endOfMonth } from "date-fns";
-
+import { startOfMonth, endOfMonth, format } from "date-fns";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
@@ -11231,11 +11560,19 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-
 interface Transaction {
   id: string;
   description: string;
@@ -11259,178 +11596,153 @@ const Transactions = () => {
   const [filterGroup, setFilterGroup] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
-    to: endOfMonth(new Date())
+    to: endOfMonth(new Date()),
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const { toast } = useToast();
-
   useEffect(() => {
     loadTransactions();
   }, [dateRange]);
-
   const loadTransactions = async () => {
     try {
       setLoading(true);
-
       let query = supabase
-        .from('transactions')
-        .select(`
+        .from("transactions")
+        .select(
+          `
           *,
           groups!left (
             name
           )
-        `)
-        .order('date', { ascending: false });
-
+        `
+        )
+        .order("date", { ascending: false });
       if (dateRange.from) {
-        query = query.gte('date', dateRange.from.toISOString().split('T')[0]);
+        query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
       }
       if (dateRange.to) {
-        query = query.lte('date', dateRange.to.toISOString().split('T')[0]);
+        query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
       }
 
       const { data, error } = await query;
 
       if (error) throw error;
+      const formattedData =
+        data?.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type as "income" | "expense",
+          category: t.category,
+          date: t.date,
+          group_id: t.group_id,
+          group_name: t.groups?.name,
+          is_fixed: t.is_fixed || false,
 
-      const formattedData = data?.map(t => ({
-        id: t.id,
-        description: t.description,
-        amount: Number(t.amount),
-        type: t.type as 'income' | 'expense',
-        category: t.category,
-        date: t.date,
-        group_id: t.group_id,
-        group_name: t.groups?.name,
-        is_fixed: t.is_fixed || false,
-        is_recurring: t.is_recurring || false,
-        recurrence_id: t.recurrence_id
-      })) || [];
+          is_recurring: t.is_recurring || false,
+          recurrence_id: t.recurrence_id,
+        })) || [];
 
       setTransactions(formattedData);
     } catch (error) {
-      console.error('Erro ao carregar transações:', error);
+      console.error("Erro ao carregar transações:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar transações",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
-
   const handleDeleteClick = (transaction: Transaction) => {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
   };
-
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
-
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
-        const { error } = await supabase
-          .from('transactions')
-          .delete()
-          .eq('recurrence_id', transactionToDelete.recurrence_id);
-
+        const { error } = await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
         if (error) throw error;
 
         toast({
           title: "Sucesso",
-          description: "Lançamento fixo removido de todos os meses com sucesso"
+          description: "Lançamento fixo removido de todos os meses com sucesso",
         });
       } else {
-        const { error } = await supabase
-          .from('transactions')
-          .delete()
-          .eq('id', transactionToDelete.id);
-
+        const { error } = await supabase.from("transactions").delete().eq("id", transactionToDelete.id);
         if (error) throw error;
 
         toast({
           title: "Sucesso",
-          description: "Transação removida com sucesso"
+          description: "Transação removida com sucesso",
         });
       }
 
       loadTransactions();
     } catch (error) {
-      console.error('Erro ao remover transação:', error);
+      console.error("Erro ao remover transação:", error);
       toast({
         title: "Erro",
         description: "Erro ao remover transação",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setDeleteDialogOpen(false);
       setTransactionToDelete(null);
     }
   };
-
-  const filteredTransactions = transactions.filter(transaction => {
-    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredTransactions = transactions.filter((transaction) => {
+    const matchesSearch =
+      transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === "all" || transaction.type === filterType;
     const matchesCategory = filterCategory === "all" || transaction.category === filterCategory;
-    const matchesGroup = filterGroup === "all" || 
-                        (filterGroup === "none" && !transaction.group_id) ||
-                        transaction.group_id === filterGroup;
+    const matchesGroup = filterGroup === "all" || (filterGroup === "none" && !transaction.group_id) || transaction.group_id === filterGroup;
 
     return matchesSearch && matchesType && matchesCategory && matchesGroup;
   });
-
-  const totalIncome = filteredTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpense = filteredTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
+  const totalIncome = filteredTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = filteredTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0);
   const balance = totalIncome - totalExpense;
 
-  const categories = Array.from(new Set(transactions.map(t => t.category)));
-
+  const categories = Array.from(new Set(transactions.map((t) => t.category)));
   const clearFilters = () => {
     setSearchTerm("");
     setFilterType("all");
     setFilterCategory("all");
     setFilterGroup("all");
   };
-
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Transações</h1>
-            <p className="text-muted-foreground">
-              Gerencie todas as suas entradas e saídas
-            </p>
+            <p className="text-muted-foreground">Gerencie todas as suas entradas e saídas</p>
           </div>
           <div className="flex gap-2">
-            <AddTransactionDialog 
-              type="income" 
+            <AddTransactionDialog
+              type="income"
               onSuccess={loadTransactions}
               trigger={
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" />
                   Nova Receita
                 </Button>
-              } 
+              }
             />
-            <AddTransactionDialog 
-              type="expense" 
+            <AddTransactionDialog
+              type="expense"
               onSuccess={loadTransactions}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Nova Despesa
                 </Button>
-              } 
+              }
             />
           </div>
         </div>
@@ -11444,14 +11756,12 @@ const Transactions = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <DateFilter
-                dateRange={dateRange}
-                onDateRangeChange={setDateRange}
-              />
-              
+              <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
                   <Input
                     placeholder="Buscar transações..."
                     value={searchTerm}
@@ -11475,10 +11785,13 @@ const Transactions = () => {
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
+
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -11508,9 +11821,9 @@ const Transactions = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-success">
-                {totalIncome.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                {totalIncome.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </div>
             </CardContent>
@@ -11522,9 +11835,9 @@ const Transactions = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-destructive">
-                {totalExpense.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+                {totalExpense.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </div>
             </CardContent>
@@ -11535,13 +11848,10 @@ const Transactions = () => {
               <CardTitle className="text-sm font-medium">Saldo</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={cn(
-                "text-2xl font-bold",
-                balance >= 0 ? "text-success" : "text-destructive"
-              )}>
-                {balance.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL'
+              <div className={cn("text-2xl font-bold", balance >= 0 ? "text-success" : "text-destructive")}>
+                {balance.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
                 })}
               </div>
             </CardContent>
@@ -11558,9 +11868,7 @@ const Transactions = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Nenhuma transação encontrada
-              </div>
+              <div className="text-center py-8 text-muted-foreground">Nenhuma transação encontrada</div>
             ) : (
               <div className="space-y-4">
                 {filteredTransactions.map((transaction) => (
@@ -11569,21 +11877,18 @@ const Transactions = () => {
                     className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "p-2 rounded-full",
-                        transaction.type === "income" 
-                          ? "bg-success/10 text-success" 
-                          : "bg-destructive/10 text-destructive"
-                      )}>
-                        {transaction.type === "income" ? (
-                          <ArrowUpCircle className="h-5 w-5" />
-                        ) : (
-                          <ArrowDownCircle className="h-5 w-5" />
+                      <div
+                        className={cn(
+                          "p-2 rounded-full",
+                          transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
                         )}
+                      >
+                        {transaction.type === "income" ? <ArrowUpCircle className="h-5 w-5" /> : <ArrowDownCircle className="h-5 w-5" />}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{transaction.description}</p>
+
                           {transaction.is_fixed && (
                             <Badge variant="outline" className="text-xs">
                               Fixo
@@ -11604,24 +11909,19 @@ const Transactions = () => {
                               {transaction.group_name}
                             </Badge>
                           )}
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                          </span>
+                          <span className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className={cn(
-                        "font-semibold text-lg",
-                        transaction.type === "income" ? "text-success" : "text-destructive"
-                      )}>
+                      <p className={cn("font-semibold text-lg", transaction.type === "income" ? "text-success" : "text-destructive")}>
                         {transaction.type === "income" ? "+" : "-"}
-                        {Math.abs(transaction.amount).toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
+                        {Math.abs(transaction.amount).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
                         })}
                       </p>
-                      
+
                       <Button
                         variant="ghost"
                         size="icon"
@@ -11642,16 +11942,15 @@ const Transactions = () => {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+
               <AlertDialogDescription>
                 {transactionToDelete?.is_fixed ? (
                   <>
-                    Este é um lançamento <strong>fixo</strong>. Ao confirmar, ele será removido de <strong>todos os meses</strong>. 
-                    Esta ação não pode ser desfeita.
+                    Este é um lançamento <strong>fixo</strong>. Ao confirmar, ele será removido de <strong>todos os meses</strong>. Esta
+                    ação não pode ser desfeita.
                   </>
                 ) : (
-                  <>
-                    Tem certeza que deseja remover esta transação? Esta ação não pode ser desfeita.
-                  </>
+                  <>Tem certeza que deseja remover esta transação? Esta ação não pode ser desfeita.</>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -11672,6 +11971,7 @@ const Transactions = () => {
 };
 
 export default Transactions;
+
 ----------------------------------------
 ENDOFFILE: src\pages\Transactions.tsx
 
