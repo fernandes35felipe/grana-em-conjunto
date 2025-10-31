@@ -1,21 +1,21 @@
 # Code Merge Output
-Generated at: 2025-10-31T20:38:03.350Z
+Generated at: 2025-10-31T20:47:46.064Z
 Source path: .
 Files processed: 102
-Total lines: 12168
-Total characters: 426549
+Total lines: 12165
+Total characters: 426519
 
 File types:
   - tsx: 75 files (9.919 lines)
   - ts: 18 files (1.922 lines)
   - json: 5 files (195 lines)
-  - js: 2 files (37 lines)
+  - js: 2 files (34 lines)
   - md: 2 files (95 lines)
 
 Project structure & file index:
 ./
   - components.json (20 lines)
-  - eslint.config.js (30 lines)
+  - eslint.config.js (27 lines)
   - package.json (91 lines)
   - postcss.config.js (7 lines)
   - README.md (74 lines)
@@ -183,11 +183,8 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
-      "@typescript-eslint/no-unused-vars": "off",
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "@typescript-eslint/no-unused-vars": "on",
     },
   }
 );
@@ -12663,7 +12660,7 @@ STARTOFFILE: tsconfig.app.json
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "noFallthroughCasesInSwitch": false,
 
     "baseUrl": ".",
