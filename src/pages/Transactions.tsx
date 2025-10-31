@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "lucide-react";
-import { startOfMonth, endOfMonth, format } from "date-fns";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "@/lib/icons";
+import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";

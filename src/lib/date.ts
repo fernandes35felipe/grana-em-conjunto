@@ -11,6 +11,6 @@ export {
   parseISO,
   addDays,
   subDays,
-} from "date-fns";
+} from 'date-fns';
 
-export { ptBR } from "date-fns/locale";
+export { ptBR } from 'date-fns/locale';

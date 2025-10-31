@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "lucide-react";
+import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "@/lib/icons";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
@@ -44,80 +44,68 @@ const Groups = () => {
 
   const fetchGroups = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
-      
+
       setCurrentUserId(user.id);
 
-      const { data: createdGroups, error: createdError } = await supabase
-        .from('groups')
-        .select('*')
-        .eq('created_by', user.id);
+      const { data: createdGroups, error: createdError } = await supabase.from("groups").select("*").eq("created_by", user.id);
 
       if (createdError) throw createdError;
 
       const { data: memberGroups, error: memberError } = await supabase
-        .from('group_members')
-        .select(`
+        .from("group_members")
+        .select(
+          `
           groups (*)
-        `)
-        .eq('user_id', user.id);
+        `
+        )
+        .eq("user_id", user.id);
 
       if (memberError) throw memberError;
 
-      const allGroups = [
-        ...(createdGroups || []),
-        ...(memberGroups?.map(mg => mg.groups).filter(Boolean) || [])
-      ];
+      const allGroups = [...(createdGroups || []), ...(memberGroups?.map((mg) => mg.groups).filter(Boolean) || [])];
 
-      const uniqueGroups = allGroups.filter((group, index, arr) => 
-        arr.findIndex(g => g.id === group.id) === index
-      );
+      const uniqueGroups = allGroups.filter((group, index, arr) => arr.findIndex((g) => g.id === group.id) === index);
 
       const groupsWithStats = await Promise.all(
         uniqueGroups.map(async (group) => {
           const { data: members, error: membersError } = await supabase
-            .from('group_members')
-            .select('user_id, joined_at')
-            .eq('group_id', group.id);
+            .from("group_members")
+            .select("user_id, joined_at")
+            .eq("group_id", group.id);
 
           if (membersError) throw membersError;
 
           const membersWithProfiles = await Promise.all(
             (members || []).map(async (member) => {
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name')
-                .eq('user_id', member.user_id)
-                .maybeSingle();
+              const { data: profile } = await supabase.from("profiles").select("full_name").eq("user_id", member.user_id).maybeSingle();
 
               return {
                 ...member,
-                profiles: profile
+                profiles: profile,
               };
             })
           );
 
           const { data: transactions, error: transError } = await supabase
-            .from('transactions')
-            .select('amount, type')
-            .eq('group_id', group.id);
+            .from("transactions")
+            .select("amount, type")
+            .eq("group_id", group.id);
 
           if (transError) throw transError;
 
-          const totalIncome = transactions
-            ?.filter(t => t.type === 'income')
-            .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+          const totalIncome = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
-          const totalExpenses = transactions
-            ?.filter(t => t.type === 'expense')
-            .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+          const totalExpenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
           const { data: lastTransaction } = await supabase
-            .from('transactions')
-            .select('created_at')
-            .eq('group_id', group.id)
-            .order('created_at', { ascending: false })
+            .from("transactions")
+            .select("created_at")
+            .eq("group_id", group.id)
+            .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
 
@@ -126,18 +114,18 @@ const Groups = () => {
             totalIncome,
             totalExpenses: -Math.abs(totalExpenses),
             lastActivity: lastTransaction?.created_at || group.created_at,
-            members: membersWithProfiles
+            members: membersWithProfiles,
           };
         })
       );
 
       setGroups(groupsWithStats);
     } catch (error) {
-      console.error('Erro ao buscar grupos:', error);
+      console.error("Erro ao buscar grupos:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar grupos. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -165,7 +153,7 @@ const Groups = () => {
           <div className="animate-pulse space-y-4">
             <div className="h-8 bg-muted rounded w-1/4"></div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1,2,3].map(i => (
+              {[1, 2, 3].map((i) => (
                 <div key={i} className="h-48 bg-muted rounded"></div>
               ))}
             </div>
@@ -182,9 +170,7 @@ const Groups = () => {
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-foreground">Grupos</h1>
-              <p className="text-sm md:text-base text-muted-foreground">
-                Gerencie e compartilhe despesas com seus grupos
-              </p>
+              <p className="text-sm md:text-base text-muted-foreground">Gerencie e compartilhe despesas com seus grupos</p>
             </div>
             <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
@@ -192,32 +178,24 @@ const Groups = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {groups.map((group) => {
               const balance = group.totalIncome + group.totalExpenses;
-              
+
               return (
                 <Card key={group.id} className="hover:shadow-lg transition-shadow">
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <div 
+                        <div
                           className="w-12 h-12 rounded-full flex items-center justify-center"
-                          style={{ backgroundColor: group.color || '#3b82f6' }}
+                          style={{ backgroundColor: group.color || "#3b82f6" }}
                         >
                           <Users className="h-6 w-6 text-white" />
                         </div>
                         <div>
                           <CardTitle className="text-lg">{group.name}</CardTitle>
-                          {group.description && (
-                            <CardDescription className="text-xs mt-1">
-                              {group.description}
-                            </CardDescription>
-                          )}
+                          {group.description && <CardDescription className="text-xs mt-1">{group.description}</CardDescription>}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditGroup(group.id)}
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => handleEditGroup(group.id)}>
                         <Settings className="h-4 w-4" />
                       </Button>
                     </div>
@@ -229,7 +207,7 @@ const Groups = () => {
                         {group.members.slice(0, 3).map((member, idx) => (
                           <Avatar key={idx} className="h-8 w-8 border-2 border-background">
                             <AvatarFallback className="text-xs">
-                              {(member.profiles?.full_name || 'U').charAt(0).toUpperCase()}
+                              {(member.profiles?.full_name || "U").charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         ))}
@@ -248,9 +226,9 @@ const Groups = () => {
                           Receitas
                         </span>
                         <span className="font-medium text-success">
-                          {group.totalIncome.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
+                          {group.totalIncome.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
                           })}
                         </span>
                       </div>
@@ -260,31 +238,25 @@ const Groups = () => {
                           Despesas
                         </span>
                         <span className="font-medium text-destructive">
-                          {group.totalExpenses.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
+                          {group.totalExpenses.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
                           })}
                         </span>
                       </div>
                       <div className="flex items-center justify-between pt-2 border-t">
                         <span className="text-sm font-medium">Saldo</span>
-                        <span className={`font-bold ${
-                          balance >= 0 ? 'text-success' : 'text-destructive'
-                        }`}>
-                          {balance.toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
+                        <span className={`font-bold ${balance >= 0 ? "text-success" : "text-destructive"}`}>
+                          {balance.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
                           })}
                         </span>
                       </div>
                     </div>
 
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
-                      >
+                      <Button variant="outline" className="flex-1" onClick={() => setSelectedGroup({ id: group.id, name: group.name })}>
                         <Eye className="h-4 w-4 mr-2" />
                         Detalhes
                       </Button>
@@ -309,17 +281,15 @@ const Groups = () => {
               <CardContent className="text-center">
                 <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
-                <p className="text-muted-foreground mb-4">
-                  Crie seu primeiro grupo para começar a compartilhar despesas
-                </p>
-                <AddGroupDialog 
+                <p className="text-muted-foreground mb-4">Crie seu primeiro grupo para começar a compartilhar despesas</p>
+                <AddGroupDialog
                   onGroupCreated={fetchGroups}
                   trigger={
                     <Button>
                       <Plus className="h-4 w-4 mr-2" />
                       Criar Primeiro Grupo
                     </Button>
-                  } 
+                  }
                 />
               </CardContent>
             </Card>
@@ -343,9 +313,7 @@ const Groups = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total de Membros</p>
-                    <p className="text-2xl font-bold">
-                      {groups.reduce((sum, g) => sum + g.members.length, 0)}
-                    </p>
+                    <p className="text-2xl font-bold">{groups.reduce((sum, g) => sum + g.members.length, 0)}</p>
                   </div>
                   <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
@@ -358,10 +326,12 @@ const Groups = () => {
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Saldo Total</p>
                     <p className="text-2xl font-bold">
-                      {groups.reduce((sum, g) => sum + g.totalIncome + g.totalExpenses, 0).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
-                      })}
+                      {groups
+                        .reduce((sum, g) => sum + g.totalIncome + g.totalExpenses, 0)
+                        .toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
                     </p>
                   </div>
                   <TrendingUp className="h-8 w-8 text-muted-foreground" />
@@ -379,12 +349,7 @@ const Groups = () => {
         groupName={selectedGroup?.name || ""}
       />
 
-      <EditGroupDialog
-        groupId={editGroupId}
-        isOpen={editDialogOpen}
-        onClose={handleEditClose}
-        onSuccess={fetchGroups}
-      />
+      <EditGroupDialog groupId={editGroupId} isOpen={editDialogOpen} onClose={handleEditClose} onSuccess={fetchGroups} />
     </DashboardLayout>
   );
 };

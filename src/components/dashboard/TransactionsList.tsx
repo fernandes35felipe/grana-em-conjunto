@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, Calendar } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Calendar } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -30,8 +30,9 @@ export const TransactionsList = () => {
   const loadTransactions = async () => {
     try {
       const { data, error } = await supabase
-        .from('transactions')
-        .select(`
+        .from("transactions")
+        .select(
+          `
           id,
           description,
           amount,
@@ -42,29 +43,31 @@ export const TransactionsList = () => {
           groups!left (
             name
           )
-        `)
-        .order('date', { ascending: false })
+        `
+        )
+        .order("date", { ascending: false })
         .limit(5);
 
       if (error) throw error;
 
-      const formattedTransactions = data?.map(transaction => ({
-        id: transaction.id,
-        description: transaction.description,
-        amount: Number(transaction.amount),
-        type: transaction.type as "income" | "expense",
-        category: transaction.category,
-        date: transaction.date,
-        group: transaction.groups ? { name: transaction.groups.name } : undefined
-      })) || [];
+      const formattedTransactions =
+        data?.map((transaction) => ({
+          id: transaction.id,
+          description: transaction.description,
+          amount: Number(transaction.amount),
+          type: transaction.type as "income" | "expense",
+          category: transaction.category,
+          date: transaction.date,
+          group: transaction.groups ? { name: transaction.groups.name } : undefined,
+        })) || [];
 
       setTransactions(formattedTransactions);
     } catch (error) {
-      console.error('Erro ao carregar transações:', error);
+      console.error("Erro ao carregar transações:", error);
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Não foi possível carregar as transações"
+        description: "Não foi possível carregar as transações",
       });
     } finally {
       setLoading(false);
@@ -114,58 +117,47 @@ export const TransactionsList = () => {
       <CardContent>
         <div className="space-y-4">
           {transactions.length === 0 ? (
-            <p className="text-center text-muted-foreground py-4">
-              Nenhuma transação encontrada
-            </p>
+            <p className="text-center text-muted-foreground py-4">Nenhuma transação encontrada</p>
           ) : (
             transactions.map((transaction) => (
-            <div
-              key={transaction.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  "p-2 rounded-full",
-                  transaction.type === "income" 
-                    ? "bg-success/10 text-success" 
-                    : "bg-destructive/10 text-destructive"
-                )}>
-                  {transaction.type === "income" ? (
-                    <ArrowUpCircle className="h-4 w-4" />
-                  ) : (
-                    <ArrowDownCircle className="h-4 w-4" />
-                  )}
-                </div>
-                <div>
-                  <p className="font-medium">{transaction.description}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge variant="secondary" className="text-xs">
-                      {transaction.category}
-                    </Badge>
-                    {transaction.group && (
-                      <Badge variant="outline" className="text-xs">
-                        Grupo: {transaction.group.name}
-                      </Badge>
+              <div
+                key={transaction.id}
+                className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      "p-2 rounded-full",
+                      transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
                     )}
+                  >
+                    {transaction.type === "income" ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
+                  </div>
+                  <div>
+                    <p className="font-medium">{transaction.description}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary" className="text-xs">
+                        {transaction.category}
+                      </Badge>
+                      {transaction.group && (
+                        <Badge variant="outline" className="text-xs">
+                          Grupo: {transaction.group.name}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
+                <div className="text-right">
+                  <p className={cn("font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                    {transaction.type === "income" ? "+" : ""}
+                    {transaction.amount.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className={cn(
-                  "font-semibold",
-                  transaction.type === "income" ? "text-success" : "text-destructive"
-                )}>
-                  {transaction.type === "income" ? "+" : ""}
-                  {transaction.amount.toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL'
-                  })}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                </p>
-              </div>
-            </div>
             ))
           )}
         </div>

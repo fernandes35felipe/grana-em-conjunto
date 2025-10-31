@@ -11,7 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MinusCircle,
-} from "lucide-react";
+} from "@/lib/icons";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { AddGoalDialog } from "@/components/dialogs/AddGoalDialog";

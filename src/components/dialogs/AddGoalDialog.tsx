@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Target } from "lucide-react";
+import { Target } from "@/lib/icons";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 interface AddGoalDialogProps {
   trigger?: React.ReactNode;
@@ -25,7 +26,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
     color: "blue",
     description: "",
     target_date: "",
-    priority: "5"
+    priority: "5",
   });
   const { toast } = useToast();
 
@@ -35,17 +36,17 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
     { value: "purple", label: "Roxo" },
     { value: "orange", label: "Laranja" },
     { value: "red", label: "Vermelho" },
-    { value: "pink", label: "Rosa" }
+    { value: "pink", label: "Rosa" },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.target_amount) {
       toast({
         title: "Erro",
         description: "Preencha todos os campos obrigatórios",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -53,31 +54,31 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
       const targetAmount = parseFloat(formData.target_amount);
       const currentAmount = formData.current_amount ? parseFloat(formData.current_amount) : 0;
       const priority = parseInt(formData.priority);
 
-      const { error } = await supabase
-        .from('investment_goals')
-        .insert({
-          user_id: user.id,
-          name: formData.name,
-          target_amount: targetAmount,
-          current_amount: currentAmount,
-          color: formData.color,
-          description: formData.description || null,
-          target_date: formData.target_date || null,
-          priority: priority
-        });
+      const { error } = await supabase.from("investment_goals").insert({
+        user_id: user.id,
+        name: formData.name,
+        target_amount: targetAmount,
+        current_amount: currentAmount,
+        color: formData.color,
+        description: formData.description || null,
+        target_date: formData.target_date || null,
+        priority: priority,
+      });
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Meta de investimento criada com sucesso!"
+        description: "Meta de investimento criada com sucesso!",
       });
 
       setFormData({
@@ -87,16 +88,16 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
         color: "blue",
         description: "",
         target_date: "",
-        priority: "5"
+        priority: "5",
       });
       setOpen(false);
       onSuccess?.();
     } catch (error) {
-      console.error('Erro ao salvar meta:', error);
+      console.error("Erro ao salvar meta:", error);
       toast({
         title: "Erro",
         description: "Erro ao criar a meta. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -112,18 +113,14 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-5 w-5 text-primary" />
             Nova Meta de Investimento
           </DialogTitle>
-          <DialogDescription>
-            Defina uma meta financeira para acompanhar seu progresso.
-          </DialogDescription>
+          <DialogDescription>Defina uma meta financeira para acompanhar seu progresso.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -133,7 +130,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
               id="name"
               placeholder="Ex: Casa própria, Aposentadoria..."
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               required
             />
           </div>
@@ -148,7 +145,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
                 min="0"
                 placeholder="0,00"
                 value={formData.target_amount}
-                onChange={(e) => setFormData(prev => ({ ...prev, target_amount: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, target_amount: e.target.value }))}
                 required
               />
             </div>
@@ -162,7 +159,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
                 min="0"
                 placeholder="0,00"
                 value={formData.current_amount}
-                onChange={(e) => setFormData(prev => ({ ...prev, current_amount: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, current_amount: e.target.value }))}
               />
             </div>
           </div>
@@ -170,7 +167,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="color">Cor</Label>
-              <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+              <Select value={formData.color} onValueChange={(value) => setFormData((prev) => ({ ...prev, color: value }))}>
                 <SelectTrigger id="color">
                   <SelectValue />
                 </SelectTrigger>
@@ -186,7 +183,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
 
             <div className="space-y-2">
               <Label htmlFor="priority">Prioridade *</Label>
-              <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}>
+              <Select value={formData.priority} onValueChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}>
                 <SelectTrigger id="priority">
                   <SelectValue />
                 </SelectTrigger>
@@ -207,7 +204,7 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
               id="description"
               placeholder="Adicione detalhes sobre esta meta..."
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
               rows={3}
             />
           </div>
@@ -218,24 +215,15 @@ export const AddGoalDialog = ({ trigger, onSuccess }: AddGoalDialogProps) => {
               id="target_date"
               type="date"
               value={formData.target_date}
-              onChange={(e) => setFormData(prev => ({ ...prev, target_date: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, target_date: e.target.value }))}
             />
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading}
-            >
+            <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? "Salvando..." : "Salvar"}
             </Button>
           </div>

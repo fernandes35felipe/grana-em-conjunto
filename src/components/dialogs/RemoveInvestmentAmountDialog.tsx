@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea"; // Adicionado
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { MinusCircle } from "lucide-react";
-import { format } from "date-fns";
+import { MinusCircle } from "@/lib/icons";
+import { format } from "@/lib/date";
+import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 // Usaremos a interface AggregatedInvestment para tipar o investimento alvo
 interface AggregatedInvestment {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, UserPlus, UserMinus, Shield, X } from "lucide-react";
+import { Users, UserPlus, UserMinus, Shield, X } from "@/lib/icons";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 interface GroupMember {
   id: string;
@@ -36,7 +37,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    color: "blue"
+    color: "blue",
   });
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [newMemberEmail, setNewMemberEmail] = useState("");
@@ -50,7 +51,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
     { value: "yellow", label: "Amarelo", class: "bg-yellow-500" },
     { value: "pink", label: "Rosa", class: "bg-pink-500" },
     { value: "orange", label: "Laranja", class: "bg-orange-500" },
-    { value: "indigo", label: "Índigo", class: "bg-indigo-500" }
+    { value: "indigo", label: "Índigo", class: "bg-indigo-500" },
   ];
 
   useEffect(() => {
@@ -63,58 +64,51 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
     if (!groupId) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       setCurrentUserId(user.id);
 
-      const { data: groupData, error: groupError } = await supabase
-        .from('groups')
-        .select('*')
-        .eq('id', groupId)
-        .single();
+      const { data: groupData, error: groupError } = await supabase.from("groups").select("*").eq("id", groupId).single();
 
       if (groupError) throw groupError;
 
       setFormData({
         name: groupData.name,
         description: groupData.description || "",
-        color: groupData.color || "blue"
+        color: groupData.color || "blue",
       });
 
       const { data: membersData, error: membersError } = await supabase
-        .from('group_members')
-        .select('id, user_id, is_admin')
-        .eq('group_id', groupId);
+        .from("group_members")
+        .select("id, user_id, is_admin")
+        .eq("group_id", groupId);
 
       if (membersError) throw membersError;
 
       const membersWithProfiles = await Promise.all(
         (membersData || []).map(async (member) => {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('user_id', member.user_id)
-            .maybeSingle();
+          const { data: profile } = await supabase.from("profiles").select("full_name").eq("user_id", member.user_id).maybeSingle();
 
           return {
             ...member,
-            profiles: profile
+            profiles: profile,
           };
         })
       );
 
       setMembers(membersWithProfiles);
 
-      const currentMember = membersData?.find(m => m.user_id === user.id);
+      const currentMember = membersData?.find((m) => m.user_id === user.id);
       setIsGroupAdmin(currentMember?.is_admin || groupData.created_by === user.id);
-
     } catch (error) {
-      console.error('Erro ao carregar dados do grupo:', error);
+      console.error("Erro ao carregar dados do grupo:", error);
       toast({
         title: "Erro",
         description: "Erro ao carregar dados do grupo",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -126,7 +120,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "O nome do grupo é obrigatório",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -135,7 +129,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "Apenas administradores podem editar o grupo",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -144,29 +138,29 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
     try {
       const { error } = await supabase
-        .from('groups')
+        .from("groups")
         .update({
           name: formData.name,
           description: formData.description || null,
-          color: formData.color
+          color: formData.color,
         })
-        .eq('id', groupId);
+        .eq("id", groupId);
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Grupo atualizado com sucesso!"
+        description: "Grupo atualizado com sucesso!",
       });
 
       onClose();
       onSuccess?.();
     } catch (error) {
-      console.error('Erro ao atualizar grupo:', error);
+      console.error("Erro ao atualizar grupo:", error);
       toast({
         title: "Erro",
         description: "Erro ao atualizar o grupo. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -180,16 +174,16 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "Apenas administradores podem adicionar membros",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     try {
       const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('user_id, full_name')
-        .ilike('full_name', `%${newMemberEmail}%`)
+        .from("profiles")
+        .select("user_id, full_name")
+        .ilike("full_name", `%${newMemberEmail}%`)
         .limit(1)
         .maybeSingle();
 
@@ -197,44 +191,42 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
         toast({
           title: "Erro",
           description: "Usuário não encontrado",
-          variant: "destructive"
+          variant: "destructive",
         });
         return;
       }
 
-      const memberExists = members.some(m => m.user_id === profileData.user_id);
+      const memberExists = members.some((m) => m.user_id === profileData.user_id);
       if (memberExists) {
         toast({
           title: "Erro",
           description: "Este usuário já é membro do grupo",
-          variant: "destructive"
+          variant: "destructive",
         });
         return;
       }
 
-      const { error: insertError } = await supabase
-        .from('group_members')
-        .insert({
-          group_id: groupId,
-          user_id: profileData.user_id,
-          is_admin: false
-        });
+      const { error: insertError } = await supabase.from("group_members").insert({
+        group_id: groupId,
+        user_id: profileData.user_id,
+        is_admin: false,
+      });
 
       if (insertError) throw insertError;
 
       toast({
         title: "Sucesso",
-        description: "Membro adicionado com sucesso!"
+        description: "Membro adicionado com sucesso!",
       });
 
       setNewMemberEmail("");
       await loadGroupData();
     } catch (error) {
-      console.error('Erro ao adicionar membro:', error);
+      console.error("Erro ao adicionar membro:", error);
       toast({
         title: "Erro",
         description: "Erro ao adicionar membro. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -244,7 +236,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "Apenas administradores podem remover membros",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -253,31 +245,28 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "Você não pode remover a si mesmo do grupo",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('group_members')
-        .delete()
-        .eq('id', memberId);
+      const { error } = await supabase.from("group_members").delete().eq("id", memberId);
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Membro removido com sucesso!"
+        description: "Membro removido com sucesso!",
       });
 
       await loadGroupData();
     } catch (error) {
-      console.error('Erro ao remover membro:', error);
+      console.error("Erro ao remover membro:", error);
       toast({
         title: "Erro",
         description: "Erro ao remover membro. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -287,31 +276,28 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       toast({
         title: "Erro",
         description: "Apenas administradores podem alterar permissões",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('group_members')
-        .update({ is_admin: !currentIsAdmin })
-        .eq('id', memberId);
+      const { error } = await supabase.from("group_members").update({ is_admin: !currentIsAdmin }).eq("id", memberId);
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: `Permissão ${!currentIsAdmin ? 'concedida' : 'removida'} com sucesso!`
+        description: `Permissão ${!currentIsAdmin ? "concedida" : "removida"} com sucesso!`,
       });
 
       await loadGroupData();
     } catch (error) {
-      console.error('Erro ao alterar permissão:', error);
+      console.error("Erro ao alterar permissão:", error);
       toast({
         title: "Erro",
         description: "Erro ao alterar permissão. Tente novamente.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -324,9 +310,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
             <Users className="h-5 w-5 text-primary" />
             Editar Grupo
           </DialogTitle>
-          <DialogDescription>
-            Gerencie as informações e membros do grupo.
-          </DialogDescription>
+          <DialogDescription>Gerencie as informações e membros do grupo.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -337,7 +321,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
                 id="edit-group-name"
                 placeholder="Ex: Família"
                 value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                 disabled={!isGroupAdmin}
               />
             </div>
@@ -348,7 +332,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
                 id="edit-group-description"
                 placeholder="Adicione uma descrição para o grupo..."
                 value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                 disabled={!isGroupAdmin}
                 rows={3}
               />
@@ -356,9 +340,9 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
             <div className="space-y-2">
               <Label htmlFor="edit-group-color">Cor</Label>
-              <Select 
-                value={formData.color} 
-                onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}
+              <Select
+                value={formData.color}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, color: value }))}
                 disabled={!isGroupAdmin}
               >
                 <SelectTrigger id="edit-group-color">
@@ -390,7 +374,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
                   placeholder="Buscar usuário por nome..."
                   value={newMemberEmail}
                   onChange={(e) => setNewMemberEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddMember())}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddMember())}
                 />
                 <Button type="button" onClick={handleAddMember} variant="outline">
                   <UserPlus className="h-4 w-4" />
@@ -400,20 +384,13 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
               {members.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border"
-                >
+                <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
                   <div className="flex items-center gap-3">
                     <Avatar>
-                      <AvatarFallback>
-                        {(member.profiles?.full_name || 'U').charAt(0).toUpperCase()}
-                      </AvatarFallback>
+                      <AvatarFallback>{(member.profiles?.full_name || "U").charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium">
-                        {member.profiles?.full_name || 'Usuário'}
-                      </p>
+                      <p className="font-medium">{member.profiles?.full_name || "Usuário"}</p>
                       {member.is_admin && (
                         <Badge variant="outline" className="text-xs">
                           <Shield className="h-3 w-3 mr-1" />
@@ -425,16 +402,8 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
                   {isGroupAdmin && member.user_id !== currentUserId && (
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={member.is_admin}
-                        onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveMember(member.id, member.user_id)}
-                      >
+                      <Switch checked={member.is_admin} onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)} />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveMember(member.id, member.user_id)}>
                         <UserMinus className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -445,19 +414,10 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={onClose}
-            >
+            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading || !isGroupAdmin}
-            >
+            <Button type="submit" className="flex-1" disabled={loading || !isGroupAdmin}>
               {loading ? "Salvando..." : "Salvar Alterações"}
             </Button>
           </div>

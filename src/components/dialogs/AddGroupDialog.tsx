@@ -1,155 +1,192 @@
 import { useState } from "react";
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useToast } from "@/hooks/use-toast";
+import { useSanitizedForm } from "@/hooks/useSanitizedForm";
+
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus } from "lucide-react";
+
+import { sanitizeInput, sanitizeColor, validateGroupData, ensureAuthenticated, withRateLimit, SECURITY_LIMITS } from "@/utils/security";
+
+import type { GroupData } from "@/utils/security/types";
 
 interface AddGroupDialogProps {
   trigger?: React.ReactNode;
   onGroupCreated?: () => void;
 }
 
+interface FormData extends Partial<GroupData> {
+  color?: string;
+}
+
+const colors = [
+  { value: "blue", label: "Azul", class: "bg-blue-500" },
+  { value: "green", label: "Verde", class: "bg-green-500" },
+  { value: "red", label: "Vermelho", class: "bg-red-500" },
+  { value: "yellow", label: "Amarelo", class: "bg-yellow-500" },
+  { value: "purple", label: "Roxo", class: "bg-purple-500" },
+  { value: "pink", label: "Rosa", class: "bg-pink-500" },
+  { value: "orange", label: "Laranja", class: "bg-orange-500" },
+  { value: "teal", label: "Azul-verde", class: "bg-teal-500" },
+];
+
+const colorToHex: Record<string, string> = {
+  blue: "#3B82F6",
+  green: "#10B981",
+  red: "#EF4444",
+  yellow: "#F59E0B",
+  purple: "#8B5CF6",
+  pink: "#EC4899",
+  orange: "#F97316",
+  teal: "#14B8A6",
+};
+
 export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps) => {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    color: "blue"
-  });
   const { toast } = useToast();
 
-  const colors = [
-    { value: "blue", label: "Azul", class: "bg-blue-500" },
-    { value: "green", label: "Verde", class: "bg-green-500" },
-    { value: "purple", label: "Roxo", class: "bg-purple-500" },
-    { value: "red", label: "Vermelho", class: "bg-red-500" },
-    { value: "yellow", label: "Amarelo", class: "bg-yellow-500" },
-    { value: "pink", label: "Rosa", class: "bg-pink-500" },
-    { value: "orange", label: "Laranja", class: "bg-orange-500" },
-    { value: "indigo", label: "Índigo", class: "bg-indigo-500" }
-  ];
+  const {
+    values: formData,
+    errors,
+    isSubmitting,
+    handleChange,
+    handleSubmit,
+    resetForm,
+  } = useSanitizedForm<FormData>({
+    initialValues: {
+      name: "",
+      description: "",
+      color: "blue",
+    },
+    sanitizers: {
+      name: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
+      description: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH),
+      color: (v) => v,
+    },
+    validators: {
+      name: (v) => ({
+        isValid: v.length > 0 && v.length <= SECURITY_LIMITS.MAX_NAME_LENGTH,
+        error: v.length === 0 ? "Nome obrigatório" : null,
+      }),
+      description: (v) => ({
+        isValid: v.length <= SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH,
+        error: v.length > SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH ? "Descrição muito longa" : null,
+      }),
+    },
+    onSubmit: async (values) => {
+      await submitGroup(values);
+    },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.name) {
-      toast({
-        title: "Erro",
-        description: "O nome do grupo é obrigatório",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setLoading(true);
-
+  const submitGroup = async (values: FormData) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
+      const userId = await ensureAuthenticated();
 
-      const { data: groupData, error: groupError } = await supabase
-        .from('groups')
-        .insert({
-          name: formData.name,
-          description: formData.description,
-          color: formData.color,
-          created_by: user.id
-        })
-        .select()
-        .single();
+      const hexColor = colorToHex[values.color || "blue"];
+      const sanitizedColor = sanitizeColor(hexColor);
 
-      if (groupError) throw groupError;
+      if (!sanitizedColor) {
+        throw new Error("Cor inválida");
+      }
 
-      // Adicionar o criador como membro do grupo automaticamente
-      const { error: memberError } = await supabase
-        .from('group_members')
-        .insert({
-          user_id: user.id,
-          group_id: groupData.id
-        });
+      const validationResult = validateGroupData({
+        name: values.name!,
+        description: values.description || null,
+        color: sanitizedColor,
+        created_by: userId,
+      });
 
-      if (memberError) throw memberError;
+      if (!validationResult.isValid) {
+        throw new Error(validationResult.error || "Dados inválidos");
+      }
+
+      await withRateLimit(
+        `group:${userId}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("groups")
+            .insert({
+              name: values.name,
+              description: values.description || null,
+              color: sanitizedColor,
+              created_by: userId,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          await supabase.from("group_members").insert({
+            group_id: data.id,
+            user_id: userId,
+            is_admin: true,
+          });
+        },
+        10
+      );
 
       toast({
         title: "Sucesso",
-        description: "Grupo criado com sucesso!"
+        description: "Grupo criado com sucesso!",
       });
 
-      setFormData({
-        name: "",
-        description: "",
-        color: "blue"
-      });
+      resetForm();
       setOpen(false);
-      
-      // Notificar o componente pai para recarregar os dados
-      onGroupCreated?.();
+      if (onGroupCreated) onGroupCreated();
     } catch (error) {
-      console.error('Erro ao criar grupo:', error);
+      console.error("Erro ao criar grupo:", error);
       toast({
         title: "Erro",
-        description: "Erro ao criar o grupo. Tente novamente.",
-        variant: "destructive"
+        description: error instanceof Error ? error.message : "Erro ao criar grupo",
+        variant: "destructive",
       });
-    } finally {
-      setLoading(false);
+      throw error;
     }
   };
 
-  const defaultTrigger = (
-    <Button>
-      <Plus className="h-4 w-4 mr-2" />
-      Criar Grupo
-    </Button>
-  );
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || defaultTrigger}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || <Button>Criar Grupo</Button>}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Criar Novo Grupo
-          </DialogTitle>
-          <DialogDescription>
-            Crie um grupo para compartilhar despesas com outras pessoas.
-          </DialogDescription>
+          <DialogTitle>Criar Novo Grupo</DialogTitle>
+          <DialogDescription>Crie um grupo para compartilhar despesas com outras pessoas</DialogDescription>
         </DialogHeader>
-
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+          <div>
             <Label htmlFor="name">Nome do Grupo *</Label>
             <Input
               id="name"
-              placeholder="Ex: Família, Casa, Viagem..."
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => handleChange("name", e.target.value)}
+              maxLength={SECURITY_LIMITS.MAX_NAME_LENGTH}
+              placeholder="Ex: Família, Casa, Viagem..."
             />
+            {errors.name && <p className="text-sm text-destructive mt-1">{errors.name}</p>}
           </div>
 
-          <div className="space-y-2">
+          <div>
             <Label htmlFor="description">Descrição (opcional)</Label>
             <Textarea
               id="description"
-              placeholder="Descreva o propósito deste grupo..."
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => handleChange("description", e.target.value)}
+              maxLength={SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH}
+              placeholder="Descreva o propósito deste grupo..."
               rows={3}
             />
+            {errors.description && <p className="text-sm text-destructive mt-1">{errors.description}</p>}
           </div>
 
-          <div className="space-y-2">
+          <div>
             <Label htmlFor="color">Cor do Grupo</Label>
-            <Select value={formData.color} onValueChange={(value) => setFormData(prev => ({ ...prev, color: value }))}>
+            <Select value={formData.color} onValueChange={(value) => handleChange("color", value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione uma cor" />
               </SelectTrigger>
@@ -166,21 +203,12 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
             </Select>
           </div>
 
-          <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setOpen(false)}
-            >
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading}
-            >
-              {loading ? "Criando..." : "Criar Grupo"}
+            <Button type="submit" className="flex-1" disabled={isSubmitting}>
+              {isSubmitting ? "Criando..." : "Criar Grupo"}
             </Button>
           </div>
         </form>

@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle } from "@/lib/icons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
     totalIncome: 0,
     totalExpenses: 0,
     totalInvestments: 0,
-    balance: 0
+    balance: 0,
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -64,61 +64,62 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
       // Load transactions
       const { data: transactionsData, error: transError } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('group_id', groupId)
-        .order('date', { ascending: false });
+        .from("transactions")
+        .select("*")
+        .eq("group_id", groupId)
+        .order("date", { ascending: false });
 
       if (transError) throw transError;
 
       // Load investments
       const { data: investmentsData, error: invError } = await supabase
-        .from('investments')
-        .select('*')
-        .eq('group_id', groupId)
-        .order('created_at', { ascending: false });
+        .from("investments")
+        .select("*")
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: false });
 
       if (invError) throw invError;
 
-      const formattedTransactions = transactionsData?.map(t => ({
-        id: t.id,
-        description: t.description,
-        amount: Number(t.amount),
-        type: t.type as "income" | "expense",
-        category: t.category,
-        date: t.date
-      })) || [];
+      const formattedTransactions =
+        transactionsData?.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type as "income" | "expense",
+          category: t.category,
+          date: t.date,
+        })) || [];
 
-      const formattedInvestments = investmentsData?.map(i => ({
-        id: i.id,
-        name: i.name,
-        type: i.type,
-        amount: Number(i.amount),
-        current_value: Number(i.current_value),
-        created_at: i.created_at
-      })) || [];
+      const formattedInvestments =
+        investmentsData?.map((i) => ({
+          id: i.id,
+          name: i.name,
+          type: i.type,
+          amount: Number(i.amount),
+          current_value: Number(i.current_value),
+          created_at: i.created_at,
+        })) || [];
 
       setTransactions(formattedTransactions);
       setInvestments(formattedInvestments);
 
       // Calculate metrics
-      const income = formattedTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-      const expenses = formattedTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+      const income = formattedTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+      const expenses = formattedTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
       const totalInvestments = formattedInvestments.reduce((sum, i) => sum + i.current_value, 0);
 
       setMetrics({
         totalIncome: income,
         totalExpenses: expenses,
         totalInvestments: totalInvestments,
-        balance: income - expenses
+        balance: income - expenses,
       });
-
     } catch (error) {
-      console.error('Erro ao carregar dados do grupo:', error);
+      console.error("Erro ao carregar dados do grupo:", error);
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Não foi possível carregar os dados do grupo"
+        description: "Não foi possível carregar os dados do grupo",
       });
     } finally {
       setLoading(false);
@@ -149,7 +150,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-success">
-                    {metrics.totalIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {metrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
                 </CardContent>
               </Card>
@@ -161,7 +162,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-destructive">
-                    {metrics.totalExpenses.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
                 </CardContent>
               </Card>
@@ -173,7 +174,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {metrics.totalInvestments.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
                 </CardContent>
               </Card>
@@ -184,11 +185,8 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                   <DollarSign className="h-4 w-4 text-primary" />
                 </CardHeader>
                 <CardContent>
-                  <div className={cn(
-                    "text-2xl font-bold",
-                    metrics.balance >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {metrics.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  <div className={cn("text-2xl font-bold", metrics.balance >= 0 ? "text-success" : "text-destructive")}>
+                    {metrics.balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </div>
                 </CardContent>
               </Card>
@@ -211,23 +209,18 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                   </CardHeader>
                   <CardContent>
                     {transactions.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">
-                        Nenhuma transação encontrada para este grupo
-                      </p>
+                      <p className="text-center text-muted-foreground py-8">Nenhuma transação encontrada para este grupo</p>
                     ) : (
                       <div className="space-y-3">
                         {transactions.map((transaction) => (
-                          <div
-                            key={transaction.id}
-                            className="flex items-center justify-between p-3 rounded-lg border border-border"
-                          >
+                          <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
                             <div className="flex items-center gap-3">
-                              <div className={cn(
-                                "p-2 rounded-full",
-                                transaction.type === "income" 
-                                  ? "bg-success/10 text-success" 
-                                  : "bg-destructive/10 text-destructive"
-                              )}>
+                              <div
+                                className={cn(
+                                  "p-2 rounded-full",
+                                  transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                                )}
+                              >
                                 {transaction.type === "income" ? (
                                   <ArrowUpCircle className="h-4 w-4" />
                                 ) : (
@@ -242,19 +235,14 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className={cn(
-                                "font-semibold",
-                                transaction.type === "income" ? "text-success" : "text-destructive"
-                              )}>
+                              <p className={cn("font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
                                 {transaction.type === "income" ? "+" : ""}
-                                {transaction.amount.toLocaleString('pt-BR', {
-                                  style: 'currency',
-                                  currency: 'BRL'
+                                {transaction.amount.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
                                 })}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                              </p>
+                              <p className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</p>
                             </div>
                           </div>
                         ))}
@@ -274,16 +262,11 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                   </CardHeader>
                   <CardContent>
                     {investments.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">
-                        Nenhum investimento encontrado para este grupo
-                      </p>
+                      <p className="text-center text-muted-foreground py-8">Nenhum investimento encontrado para este grupo</p>
                     ) : (
                       <div className="space-y-3">
                         {investments.map((investment) => (
-                          <div
-                            key={investment.id}
-                            className="flex items-center justify-between p-3 rounded-lg border border-border"
-                          >
+                          <div key={investment.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
                             <div>
                               <p className="font-medium">{investment.name}</p>
                               <div className="flex items-center gap-2 mt-1">
@@ -294,20 +277,19 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                             </div>
                             <div className="text-right">
                               <p className="font-semibold">
-                                {investment.current_value.toLocaleString('pt-BR', {
-                                  style: 'currency',
-                                  currency: 'BRL'
+                                {investment.current_value.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
                                 })}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Aplicado: {investment.amount.toLocaleString('pt-BR', {
-                                  style: 'currency',
-                                  currency: 'BRL'
+                                Aplicado:{" "}
+                                {investment.amount.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
                                 })}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(investment.created_at).toLocaleDateString('pt-BR')}
-                              </p>
+                              <p className="text-xs text-muted-foreground">{new Date(investment.created_at).toLocaleDateString("pt-BR")}</p>
                             </div>
                           </div>
                         ))}

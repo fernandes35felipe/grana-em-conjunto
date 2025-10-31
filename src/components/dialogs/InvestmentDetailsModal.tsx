@@ -1,8 +1,9 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Calendar, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, Calendar, DollarSign } from "@/lib/icons";
 import { cn } from "@/lib/utils";
+import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 interface Investment {
   id: string;
@@ -21,12 +22,7 @@ interface InvestmentDetailsModalProps {
   investments: Investment[];
 }
 
-export const InvestmentDetailsModal = ({ 
-  open, 
-  onOpenChange, 
-  type, 
-  investments 
-}: InvestmentDetailsModalProps) => {
+export const InvestmentDetailsModal = ({ open, onOpenChange, type, investments }: InvestmentDetailsModalProps) => {
   const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrent = investments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrent - totalInvested) / totalInvested) * 100 : 0;
@@ -40,9 +36,7 @@ export const InvestmentDetailsModal = ({
             <TrendingUp className="h-5 w-5 text-primary" />
             Investimentos em {type}
           </DialogTitle>
-          <DialogDescription>
-            Detalhamento de todos os seus investimentos do tipo {type}
-          </DialogDescription>
+          <DialogDescription>Detalhamento de todos os seus investimentos do tipo {type}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -54,9 +48,9 @@ export const InvestmentDetailsModal = ({
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total Investido</p>
                     <p className="text-xl font-bold">
-                      {totalInvested.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                      {totalInvested.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </p>
                   </div>
@@ -71,9 +65,9 @@ export const InvestmentDetailsModal = ({
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Valor Atual</p>
                     <p className="text-xl font-bold text-primary">
-                      {totalCurrent.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
+                      {totalCurrent.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
                       })}
                     </p>
                   </div>
@@ -87,11 +81,9 @@ export const InvestmentDetailsModal = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Rentabilidade</p>
-                    <p className={cn(
-                      "text-xl font-bold",
-                      totalReturn >= 0 ? "text-success" : "text-destructive"
-                    )}>
-                      {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(2)}%
+                    <p className={cn("text-xl font-bold", totalReturn >= 0 ? "text-success" : "text-destructive")}>
+                      {totalReturn >= 0 ? "+" : ""}
+                      {totalReturn.toFixed(2)}%
                     </p>
                   </div>
                   {totalReturn >= 0 ? (
@@ -108,9 +100,7 @@ export const InvestmentDetailsModal = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Quantidade</p>
-                    <p className="text-xl font-bold">
-                      {investments.length}
-                    </p>
+                    <p className="text-xl font-bold">{investments.length}</p>
                   </div>
                   <Badge variant="secondary" className="text-lg">
                     {investments.length}
@@ -124,10 +114,9 @@ export const InvestmentDetailsModal = ({
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Detalhamento dos Investimentos</h3>
             {investments.map((investment) => {
-              const investmentReturn = investment.amount > 0 
-                ? ((investment.current_value - investment.amount) / investment.amount) * 100 
-                : 0;
-              
+              const investmentReturn =
+                investment.amount > 0 ? ((investment.current_value - investment.amount) / investment.amount) * 100 : 0;
+
               return (
                 <Card key={investment.id}>
                   <CardContent className="p-4">
@@ -145,55 +134,50 @@ export const InvestmentDetailsModal = ({
                             {investment.maturity_date && (
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Calendar className="h-3 w-3" />
-                                Venc: {new Date(investment.maturity_date).toLocaleDateString('pt-BR')}
+                                Venc: {new Date(investment.maturity_date).toLocaleDateString("pt-BR")}
                               </div>
                             )}
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="h-3 w-3" />
-                              Criado: {new Date(investment.created_at).toLocaleDateString('pt-BR')}
+                              Criado: {new Date(investment.created_at).toLocaleDateString("pt-BR")}
                             </div>
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="text-right">
                         <div className="flex items-center gap-6">
                           <div>
                             <p className="text-sm text-muted-foreground">Investido</p>
                             <p className="font-medium">
-                              {investment.amount.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
+                              {investment.amount.toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
                               })}
                             </p>
                           </div>
                           <div>
                             <p className="text-sm text-muted-foreground">Atual</p>
                             <p className="font-medium">
-                              {investment.current_value.toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
+                              {investment.current_value.toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
                               })}
                             </p>
                           </div>
                           <div>
                             <p className="text-sm text-muted-foreground">Retorno</p>
-                            <p className={cn(
-                              "font-semibold",
-                              investmentReturn >= 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {investmentReturn >= 0 ? "+" : ""}{investmentReturn.toFixed(2)}%
+                            <p className={cn("font-semibold", investmentReturn >= 0 ? "text-success" : "text-destructive")}>
+                              {investmentReturn >= 0 ? "+" : ""}
+                              {investmentReturn.toFixed(2)}%
                             </p>
                           </div>
                           <div>
                             <p className="text-sm text-muted-foreground">Lucro/Prejuízo</p>
-                            <p className={cn(
-                              "font-semibold",
-                              investmentReturn >= 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {(investment.current_value - investment.amount).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
+                            <p className={cn("font-semibold", investmentReturn >= 0 ? "text-success" : "text-destructive")}>
+                              {(investment.current_value - investment.amount).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
                               })}
                             </p>
                           </div>

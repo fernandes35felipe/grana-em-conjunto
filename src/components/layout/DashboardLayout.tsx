@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu } from "@/lib/icons";
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -34,9 +34,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="h-full">
-            {children}
-          </div>
+          <div className="h-full">{children}</div>
         </main>
       </div>
     </div>
