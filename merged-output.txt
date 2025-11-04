@@ -1,14 +1,14 @@
 # Code Merge Output
-Generated at: 2025-10-31T20:47:46.064Z
+Generated at: 2025-11-04T19:41:38.516Z
 Source path: .
-Files processed: 102
-Total lines: 12165
-Total characters: 426519
+Files processed: 106
+Total lines: 12351
+Total characters: 432094
 
 File types:
-  - tsx: 75 files (9.919 lines)
-  - ts: 18 files (1.922 lines)
-  - json: 5 files (195 lines)
+  - tsx: 77 files (10.063 lines)
+  - ts: 20 files (1.962 lines)
+  - json: 5 files (197 lines)
   - js: 2 files (34 lines)
   - md: 2 files (95 lines)
 
@@ -16,7 +16,7 @@ Project structure & file index:
 ./
   - components.json (20 lines)
   - eslint.config.js (27 lines)
-  - package.json (91 lines)
+  - package.json (93 lines)
   - postcss.config.js (7 lines)
   - README.md (74 lines)
   - RECURRENCE_FEATURE.md (21 lines)
@@ -26,10 +26,12 @@ Project structure & file index:
   - tsconfig.node.json (23 lines)
   - vite.config.ts (68 lines)
   src/
-    - App.tsx (55 lines)
+    - App.tsx (82 lines)
     - main.tsx (13 lines)
     - vite-env.d.ts (2 lines)
     components/
+      - LoadingFallback.tsx (13 lines)
+      - VirtualizedTransactionsList.tsx (102 lines)
       auth/
         - ProtectedRoute.tsx (24 lines)
       dashboard/
@@ -52,6 +54,8 @@ Project structure & file index:
       layout/
         - DashboardLayout.tsx (43 lines)
         - Sidebar.tsx (76 lines)
+      transactions/
+        - types.ts (25 lines)
       ui/
         - accordion.tsx (51 lines)
         - alert-dialog.tsx (140 lines)
@@ -102,6 +106,8 @@ Project structure & file index:
         - toggle.tsx (44 lines)
         - tooltip.tsx (29 lines)
         - use-toast.ts (4 lines)
+    constants/
+      - investment-types.ts (15 lines)
     contexts/
       - AuthContext.tsx (149 lines)
     hooks/
@@ -123,7 +129,7 @@ Project structure & file index:
       - Index.tsx (120 lines)
       - Investments.tsx (775 lines)
       - NotFound.tsx (28 lines)
-      - Transactions.tsx (423 lines)
+      - Transactions.tsx (425 lines)
     utils/
       security/
         - constants.ts (70 lines)
@@ -254,6 +260,7 @@ STARTOFFILE: package.json
     "react-hook-form": "^7.61.1",
     "react-resizable-panels": "^2.1.9",
     "react-router-dom": "^6.30.1",
+    "react-window": "^2.2.2",
     "recharts": "^2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
@@ -269,6 +276,7 @@ STARTOFFILE: package.json
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
+    "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
     "dotenv": "^17.2.3",
@@ -407,21 +415,35 @@ ENDOFFILE: RECURRENCE_FEATURE.md
 
 STARTOFFILE: src\App.tsx
 ----------------------------------------
+import { lazy, Suspense } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
-import Transactions from "./pages/Transactions";
-import Investments from "./pages/Investments";
-import Groups from "./pages/Groups";
-import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { LoadingFallback } from "./components/LoadingFallback";
+
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const Investments = lazy(() => import("./pages/Investments"));
+const Groups = lazy(() => import("./pages/Groups"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -429,32 +451,45 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/transactions" element={
-            <ProtectedRoute>
-              <Transactions />
-            </ProtectedRoute>
-          } />
-          <Route path="/investments" element={
-            <ProtectedRoute>
-              <Investments />
-            </ProtectedRoute>
-          } />
-          <Route path="/groups" element={
-            <ProtectedRoute>
-              <Groups />
-            </ProtectedRoute>
-          } />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions"
+              element={
+                <ProtectedRoute>
+                  <Transactions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/investments"
+              element={
+                <ProtectedRoute>
+                  <Investments />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/groups"
+              element={
+                <ProtectedRoute>
+                  <Groups />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
@@ -1476,7 +1511,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
+import { INVESTMENT_TYPES } from "@/constants/investment-types";
 import { useToast } from "@/hooks/use-toast";
 import { useSanitizedForm } from "@/hooks/useSanitizedForm";
 
@@ -3954,6 +3989,54 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
 
 ----------------------------------------
 ENDOFFILE: src\components\layout\Sidebar.tsx
+
+STARTOFFILE: src\components\LoadingFallback.tsx
+----------------------------------------
+import { Loader2 } from "lucide-react";
+
+export const LoadingFallback = () => {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Carregando...</p>
+      </div>
+    </div>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\LoadingFallback.tsx
+
+STARTOFFILE: src\components\transactions\types.ts
+----------------------------------------
+export type Transaction = {
+  id: string;
+  description: string;
+  amount: number;
+  type: "income" | "expense";
+  category: string;
+  date: string;
+  group_id?: string | null;
+  user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  is_recurring?: boolean;
+  is_fixed?: boolean;
+  recurrence_id?: string | null;
+  recurrence_count?: number | null;
+  assigned_to?: string | null;
+  [key: string]: any;
+};
+
+export type VirtualizedListProps<T> = {
+  data: T[];
+  height?: number;
+  itemHeight?: number;
+};
+
+----------------------------------------
+ENDOFFILE: src\components\transactions\types.ts
 
 STARTOFFILE: src\components\ui\accordion.tsx
 ----------------------------------------
@@ -8364,6 +8447,133 @@ export { useToast, toast };
 ----------------------------------------
 ENDOFFILE: src\components\ui\use-toast.ts
 
+STARTOFFILE: src\components\VirtualizedTransactionsList.tsx
+----------------------------------------
+import { useMemo } from "react";
+import { FixedSizeList as List } from "react-window";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ArrowUpCircle, ArrowDownCircle, Calendar, Trash2 } from "@/lib/icons";
+import { cn } from "@/lib/utils";
+
+import type { Transaction } from "./transactions/types";
+
+interface VirtualizedTransactionsListProps {
+  transactions: Transaction[];
+  onDelete: (id: string) => void;
+  height?: number;
+  itemHeight?: number;
+}
+
+export const VirtualizedTransactionsList = ({
+  transactions,
+  onDelete,
+  height = 600,
+  itemHeight = 80,
+}: VirtualizedTransactionsListProps) => {
+  const sortedTransactions = useMemo(
+    () => [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [transactions]
+  );
+
+  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const transaction = sortedTransactions[index];
+
+    return (
+      <div style={style} className="px-4">
+        <div className="flex items-center justify-between py-4 border-b">
+          <div className="flex items-center gap-3 flex-1">
+            <div className={cn("p-2 rounded-full", transaction.type === "income" ? "bg-success/10" : "bg-destructive/10")}>
+              {transaction.type === "income" ? (
+                <ArrowUpCircle className="h-4 w-4 text-success" />
+              ) : (
+                <ArrowDownCircle className="h-4 w-4 text-destructive" />
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{transaction.description}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant="secondary" className="text-xs">
+                  {transaction.category}
+                </Badge>
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {new Date(transaction.date).toLocaleDateString("pt-BR")}
+                </span>
+                {transaction.group_id && (
+                  <Badge variant="outline" className="text-xs">
+                    Grupo
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <p
+              className={cn("font-semibold text-lg whitespace-nowrap", transaction.type === "income" ? "text-success" : "text-destructive")}
+            >
+              {transaction.type === "income" ? "+" : "-"}
+              {Math.abs(transaction.amount).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}
+            </p>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(transaction.id)}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (sortedTransactions.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p>Nenhuma transação encontrada</p>
+      </div>
+    );
+  }
+
+  return (
+    <List height={height} itemCount={sortedTransactions.length} itemSize={itemHeight} width="100%" className="scrollbar-thin">
+      {Row}
+    </List>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\VirtualizedTransactionsList.tsx
+
+STARTOFFILE: src\constants\investment-types.ts
+----------------------------------------
+export const INVESTMENT_TYPES = [
+  "Ações",
+  "FIIs",
+  "Renda Fixa",
+  "Tesouro Direto",
+  "CDB",
+  "LCI/LCA",
+  "Criptomoedas",
+  "Fundos",
+  "Previdência",
+  "Outro",
+] as const;
+
+export type InvestmentType = (typeof INVESTMENT_TYPES)[number];
+
+----------------------------------------
+ENDOFFILE: src\constants\investment-types.ts
+
 STARTOFFILE: src\contexts\AuthContext.tsx
 ----------------------------------------
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
@@ -11150,6 +11360,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { VirtualizedTransactionsList } from "@/components/VirtualizedTransactionsList";
+
 interface Transaction {
   id: string;
   description: string;
