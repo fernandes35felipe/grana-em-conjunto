@@ -1,115 +1,53 @@
 import { useState, useEffect } from "react";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PiggyBank } from "lucide-react";
 import { INVESTMENT_TYPES } from "@/constants/investment-types";
 import { useToast } from "@/hooks/use-toast";
-import { useSanitizedForm } from "@/hooks/useSanitizedForm";
-
 import { supabase } from "@/integrations/supabase/client";
-
-import {
-  sanitizeInput,
-  sanitizeAmount,
-  sanitizeInteger,
-  sanitizeDate,
-  sanitizeUUID,
-  validateInvestmentData,
-  ensureAuthenticated,
-  checkGroupMembership,
-  withRateLimit,
-  SECURITY_LIMITS,
-  ALLOWED_INVESTMENT_TYPES,
-} from "@/utils/security";
-
-import type { InvestmentData } from "@/utils/security/types";
-
-interface AddInvestmentDialogProps {
-  trigger?: React.ReactNode;
-  onSuccess?: () => void;
-}
-
-interface FormData extends Partial<InvestmentData> {
-  goal_id?: string;
-}
-
 interface Group {
   id: string;
   name: string;
 }
 
+// Interface para as metas (necessária para as props)
 interface InvestmentGoal {
   id: string;
   name: string;
-  target_amount: number;
-  current_amount: number;
 }
 
-export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
+interface AddInvestmentDialogProps {
+  trigger?: React.ReactNode;
+  onSuccess?: (investment: { goal_id: string | null }) => void; // Modificado para passar o goal_id
+  goals: InvestmentGoal[]; // Adicionada prop para receber as metas
+}
+
+export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoal[]>([]);
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "",
+    amount: "",
+    current_value: "",
+    quantity: "",
+    unit_price: "",
+    group_id: "none",
+    goal_id: "none", // Adicionado
+    maturity_date: "",
+  });
   const { toast } = useToast();
 
-  const {
-    values: formData,
-    errors,
-    isSubmitting,
-    handleChange,
-    handleSubmit,
-    resetForm,
-  } = useSanitizedForm<FormData>({
-    initialValues: {
-      name: "",
-      type: "",
-      amount: 0,
-      quantity: null,
-      unit_price: null,
-      group_id: "none",
-      goal_id: "none",
-      maturity_date: null,
-    },
-    sanitizers: {
-      name: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      type: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      amount: (v) => sanitizeAmount(v),
-      quantity: (v) => (v ? sanitizeInteger(v, SECURITY_LIMITS.MIN_QUANTITY, SECURITY_LIMITS.MAX_QUANTITY) : null),
-      unit_price: (v) => (v ? sanitizeAmount(v) : null),
-      group_id: (v) => (v === "none" ? v : sanitizeUUID(v) || "none"),
-      goal_id: (v) => (v === "none" ? v : sanitizeUUID(v) || "none"),
-      maturity_date: (v) => (v ? sanitizeDate(v) : null),
-    },
-    validators: {
-      name: (v) => ({
-        isValid: v.length > 0 && v.length <= SECURITY_LIMITS.MAX_NAME_LENGTH,
-        error: v.length === 0 ? "Nome obrigatório" : null,
-      }),
-      type: (v) => ({
-        isValid: ALLOWED_INVESTMENT_TYPES.includes(v as any),
-        error: !ALLOWED_INVESTMENT_TYPES.includes(v as any) ? "Tipo de investimento inválido" : null,
-      }),
-      amount: (v) => ({
-        isValid: v > 0,
-        error: v <= 0 ? "Valor deve ser maior que zero" : null,
-      }),
-    },
-    onSubmit: async (values) => {
-      await submitInvestment(values);
-    },
-  });
-
   const showQuantityPriceFields = formData.type === "Ações" || formData.type === "FIIs";
-
   useEffect(() => {
     if (open) {
       loadGroups();
-      loadInvestmentGoals();
     }
   }, [open]);
-
   const loadGroups = async () => {
     try {
       const { data, error } = await supabase.from("groups").select("id, name").order("name");
@@ -120,219 +58,218 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     }
   };
 
-  const loadInvestmentGoals = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
     try {
-      const { data, error } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
-      if (error) throw error;
-      setInvestmentGoals(data || []);
-    } catch (error) {
-      console.error("Erro ao carregar metas:", error);
-    }
-  };
-
-  const submitInvestment = async (values: FormData) => {
-    try {
-      const userId = await ensureAuthenticated();
-
-      if (values.group_id && values.group_id !== "none") {
-        const hasAccess = await checkGroupMembership(userId, values.group_id);
-        if (!hasAccess) {
-          throw new Error("Sem permissão para adicionar investimentos neste grupo");
-        }
-      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
 
       let calculatedAmount = 0;
+      let currentValue = 0;
       let quantity = null;
       let unitPrice = null;
 
       if (showQuantityPriceFields) {
-        if (!values.quantity || !values.unit_price) {
-          throw new Error("Preencha Quantidade e Valor Unitário para Ações/FIIs");
+        if (!formData.quantity || !formData.unit_price) {
+          toast({
+            title: "Erro",
+            description: "Preencha Quantidade e Valor Unitário para Ações/FIIs",
+            variant: "destructive",
+          });
+          return;
         }
-        quantity = values.quantity;
-        unitPrice = values.unit_price;
+        quantity = parseFloat(formData.quantity);
+        unitPrice = parseFloat(formData.unit_price);
         calculatedAmount = quantity * unitPrice;
+        currentValue = formData.current_value ? parseFloat(formData.current_value) : calculatedAmount;
       } else {
-        if (!values.amount || values.amount <= 0) {
-          throw new Error("Preencha o Valor Investido");
+        if (!formData.amount) {
+          toast({
+            title: "Erro",
+            description: "Preencha o Valor Investido",
+            variant: "destructive",
+          });
+          return;
         }
-        calculatedAmount = values.amount;
+        calculatedAmount = parseFloat(formData.amount);
+        currentValue = formData.current_value ? parseFloat(formData.current_value) : calculatedAmount;
       }
 
-      const validationResult = validateInvestmentData({
-        name: values.name!,
-        type: values.type!,
+      const investmentData: any = {
+        user_id: user.id,
+        name: formData.name,
+        type: formData.type,
         amount: calculatedAmount,
+        current_value: currentValue,
         quantity,
         unit_price: unitPrice,
-        group_id: values.group_id === "none" ? null : values.group_id,
-        maturity_date: values.maturity_date,
-      });
+        group_id: formData.group_id === "none" ? null : formData.group_id,
+        goal_id: formData.goal_id === "none" ? null : formData.goal_id, // Adicionado
+        maturity_date: formData.maturity_date || null,
+      };
+      const { error: insertError } = await supabase.from("investments").insert(investmentData);
 
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error || "Dados inválidos");
-      }
-
-      await withRateLimit(
-        `investment:${userId}`,
-        async () => {
-          const { error } = await supabase.from("investments").insert({
-            user_id: userId,
-            name: values.name,
-            type: values.type,
-            amount: calculatedAmount,
-            current_value: calculatedAmount,
-            quantity,
-            unit_price: unitPrice,
-            group_id: values.group_id === "none" ? null : values.group_id,
-            maturity_date: values.maturity_date,
-          });
-
-          if (error) throw error;
-
-          if (values.goal_id && values.goal_id !== "none") {
-            const { data: goalData, error: fetchError } = await supabase
-              .from("investment_goals")
-              .select("current_amount")
-              .eq("id", values.goal_id)
-              .single();
-
-            if (!fetchError && goalData) {
-              await supabase
-                .from("investment_goals")
-                .update({
-                  current_amount: goalData.current_amount + calculatedAmount,
-                })
-                .eq("id", values.goal_id);
-            }
-          }
-        },
-        30
-      );
-
+      if (insertError) throw insertError;
       toast({
         title: "Sucesso",
         description: "Investimento adicionado com sucesso!",
       });
 
-      resetForm();
+      // Chama o onSuccess passando o goal_id para o pai recalcular
+      onSuccess?.({ goal_id: investmentData.goal_id });
+
+      setFormData({
+        name: "",
+        type: "",
+        amount: "",
+        current_value: "",
+        quantity: "",
+        unit_price: "",
+        group_id: "none",
+        goal_id: "none", // Resetado
+        maturity_date: "",
+      });
       setOpen(false);
-      if (onSuccess) onSuccess();
     } catch (error) {
-      console.error("Erro ao criar investimento:", error);
+      console.error("Erro ao salvar investimento:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao criar investimento",
+        description: "Erro ao salvar o investimento. Tente novamente.",
         variant: "destructive",
       });
-      throw error;
+    } finally {
+      setLoading(false);
     }
   };
-
+  const defaultTrigger = (
+    <Button variant="outline" className="h-20 flex flex-col gap-2">
+      <PiggyBank className="h-6 w-6" />
+      <span className="text-sm">Investir</span>
+    </Button>
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger || <Button>Adicionar Investimento</Button>}</DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Adicionar Investimento</DialogTitle>
-          <DialogDescription>Preencha os dados do seu investimento</DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <PiggyBank className="h-5 w-5 text-primary" />
+            Novo Investimento
+          </DialogTitle>
+          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="name">Nome</Label>
+          <div className="space-y-2">
+            <Label htmlFor="name">Nome *</Label>
             <Input
               id="name"
-              value={formData.name}
-              onChange={(e) => handleChange("name", e.target.value)}
-              maxLength={SECURITY_LIMITS.MAX_NAME_LENGTH}
               placeholder="Ex: PETR4, MXRF11..."
+              value={formData.name}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              required
             />
-            {errors.name && <p className="text-sm text-destructive mt-1">{errors.name}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="type">Tipo</Label>
-            <Select value={formData.type} onValueChange={(value) => handleChange("type", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="type">Tipo *</Label>
+            <Select value={formData.type} onValueChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
-                {ALLOWED_INVESTMENT_TYPES.map((type) => (
+                {INVESTMENT_TYPES.map((type) => (
                   <SelectItem key={type} value={type}>
                     {type}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.type && <p className="text-sm text-destructive mt-1">{errors.type}</p>}
           </div>
 
           {showQuantityPriceFields ? (
             <>
-              <div>
-                <Label htmlFor="quantity">Quantidade</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  min="0"
-                  max={SECURITY_LIMITS.MAX_QUANTITY}
-                  value={formData.quantity || ""}
-                  onChange={(e) => handleChange("quantity", e.target.value)}
-                  placeholder="Ex: 100"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantidade *</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    value={formData.quantity}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        quantity: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit_price">Valor Unitário *</Label>
+                  <Input
+                    id="unit_price"
+                    type="number"
+                    step="0.01"
+                    placeholder="0,00"
+                    value={formData.unit_price}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        unit_price: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
               </div>
-
-              <div>
-                <Label htmlFor="unit_price">Valor Unitário</Label>
-                <Input
-                  id="unit_price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={SECURITY_LIMITS.MAX_AMOUNT}
-                  value={formData.unit_price || ""}
-                  onChange={(e) => handleChange("unit_price", e.target.value)}
-                  placeholder="Ex: 25.50"
-                />
-              </div>
-
               {formData.quantity && formData.unit_price && (
-                <div className="p-3 bg-muted rounded-md">
-                  <p className="text-sm text-muted-foreground">Valor Total</p>
-                  <p className="text-lg font-semibold">
-                    {(formData.quantity * formData.unit_price).toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
+                <div className="text-sm text-muted-foreground">
+                  Valor Total: R$ {(parseFloat(formData.quantity) * parseFloat(formData.unit_price)).toFixed(2)}
                 </div>
               )}
             </>
           ) : (
-            <div>
-              <Label htmlFor="amount">Valor Investido</Label>
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor Investido *</Label>
               <Input
                 id="amount"
                 type="number"
                 step="0.01"
-                min="0"
-                max={SECURITY_LIMITS.MAX_AMOUNT}
+                placeholder="0,00"
                 value={formData.amount}
-                onChange={(e) => handleChange("amount", e.target.value)}
-                placeholder="0.00"
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
               />
-              {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount}</p>}
             </div>
           )}
 
-          <div>
+          <div className="space-y-2">
+            <Label htmlFor="current_value">Valor Atual (opcional)</Label>
+            <Input
+              id="current_value"
+              type="number"
+              step="0.01"
+              placeholder="0,00"
+              value={formData.current_value}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  current_value: e.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => handleChange("group_id", value)}>
+            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhum grupo</SelectItem>
+                <SelectItem value="none">Pessoal</SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
@@ -342,30 +279,36 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div>
+          {/* NOVO CAMPO DE METAS */}
+          <div className="space-y-2">
             <Label htmlFor="goal">Meta (opcional)</Label>
-            <Select value={formData.goal_id} onValueChange={(value) => handleChange("goal_id", value)}>
+            <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Nenhuma meta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhuma meta</SelectItem>
-                {investmentGoals.map((goal) => (
+                <SelectItem value="none">Nenhuma</SelectItem>
+                {goals.map((goal) => (
                   <SelectItem key={goal.id} value={goal.id}>
-                    {goal.name} ({((goal.current_amount / goal.target_amount) * 100).toFixed(1)}% completo)
+                    {goal.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="maturity_date">Data de Vencimento (opcional)</Label>
             <Input
               id="maturity_date"
               type="date"
-              value={formData.maturity_date || ""}
-              onChange={(e) => handleChange("maturity_date", e.target.value)}
+              value={formData.maturity_date}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  maturity_date: e.target.value,
+                }))
+              }
             />
           </div>
 
@@ -373,8 +316,8 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSubmitting}>
-              {isSubmitting ? "Salvando..." : "Salvar"}
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </form>

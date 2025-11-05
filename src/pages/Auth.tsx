@@ -65,7 +65,6 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-gradient-primary flex items-center justify-center p-4">
       <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-8 items-center">
-        {/* Left side - Marketing */}
         <div className="hidden lg:block space-y-8 text-foreground">
           <div className="space-y-4">
             <h1 className="text-4xl font-bold bg-gradient-income bg-clip-text text-transparent">Controle Financeiro Inteligente</h1>

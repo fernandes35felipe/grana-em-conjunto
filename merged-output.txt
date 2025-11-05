@@ -1,12 +1,12 @@
 # Code Merge Output
-Generated at: 2025-11-04T19:41:38.516Z
+Generated at: 2025-11-05T21:01:59.847Z
 Source path: .
-Files processed: 106
-Total lines: 12351
-Total characters: 432094
+Files processed: 107
+Total lines: 12522
+Total characters: 439336
 
 File types:
-  - tsx: 77 files (10.063 lines)
+  - tsx: 78 files (10.234 lines)
   - ts: 20 files (1.962 lines)
   - json: 5 files (197 lines)
   - js: 2 files (34 lines)
@@ -41,10 +41,11 @@ Project structure & file index:
       dialogs/
         - AddGoalDialog.tsx (235 lines)
         - AddGroupDialog.tsx (219 lines)
-        - AddInvestmentDialog.tsx (385 lines)
+        - AddInvestmentDialog.tsx (328 lines)
         - AddTransactionDialog.tsx (426 lines)
         - EditGoalDialog.tsx (241 lines)
         - EditGroupDialog.tsx (429 lines)
+        - InvestmentAdjustmentDialog.tsx (209 lines)
         - InvestmentDetailsModal.tsx (204 lines)
         - RemoveInvestmentAmountDialog.tsx (181 lines)
       filters/
@@ -109,7 +110,7 @@ Project structure & file index:
     constants/
       - investment-types.ts (15 lines)
     contexts/
-      - AuthContext.tsx (149 lines)
+      - AuthContext.tsx (200 lines)
     hooks/
       - use-mobile.tsx (20 lines)
       - use-toast.ts (192 lines)
@@ -123,11 +124,11 @@ Project structure & file index:
       - icons.ts (44 lines)
       - utils.ts (7 lines)
     pages/
-      - Auth.tsx (246 lines)
+      - Auth.tsx (245 lines)
       - Dashboard.tsx (162 lines)
       - Groups.tsx (358 lines)
       - Index.tsx (120 lines)
-      - Investments.tsx (775 lines)
+      - Investments.tsx (744 lines)
       - NotFound.tsx (28 lines)
       - Transactions.tsx (425 lines)
     utils/
@@ -1505,117 +1506,55 @@ ENDOFFILE: src\components\dialogs\AddGroupDialog.tsx
 STARTOFFILE: src\components\dialogs\AddInvestmentDialog.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PiggyBank } from "lucide-react";
 import { INVESTMENT_TYPES } from "@/constants/investment-types";
 import { useToast } from "@/hooks/use-toast";
-import { useSanitizedForm } from "@/hooks/useSanitizedForm";
-
 import { supabase } from "@/integrations/supabase/client";
-
-import {
-  sanitizeInput,
-  sanitizeAmount,
-  sanitizeInteger,
-  sanitizeDate,
-  sanitizeUUID,
-  validateInvestmentData,
-  ensureAuthenticated,
-  checkGroupMembership,
-  withRateLimit,
-  SECURITY_LIMITS,
-  ALLOWED_INVESTMENT_TYPES,
-} from "@/utils/security";
-
-import type { InvestmentData } from "@/utils/security/types";
-
-interface AddInvestmentDialogProps {
-  trigger?: React.ReactNode;
-  onSuccess?: () => void;
-}
-
-interface FormData extends Partial<InvestmentData> {
-  goal_id?: string;
-}
-
 interface Group {
   id: string;
   name: string;
 }
 
+// Interface para as metas (necessária para as props)
 interface InvestmentGoal {
   id: string;
   name: string;
-  target_amount: number;
-  current_amount: number;
 }
 
-export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
+interface AddInvestmentDialogProps {
+  trigger?: React.ReactNode;
+  onSuccess?: (investment: { goal_id: string | null }) => void; // Modificado para passar o goal_id
+  goals: InvestmentGoal[]; // Adicionada prop para receber as metas
+}
+
+export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoal[]>([]);
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "",
+    amount: "",
+    current_value: "",
+    quantity: "",
+    unit_price: "",
+    group_id: "none",
+    goal_id: "none", // Adicionado
+    maturity_date: "",
+  });
   const { toast } = useToast();
 
-  const {
-    values: formData,
-    errors,
-    isSubmitting,
-    handleChange,
-    handleSubmit,
-    resetForm,
-  } = useSanitizedForm<FormData>({
-    initialValues: {
-      name: "",
-      type: "",
-      amount: 0,
-      quantity: null,
-      unit_price: null,
-      group_id: "none",
-      goal_id: "none",
-      maturity_date: null,
-    },
-    sanitizers: {
-      name: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      type: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      amount: (v) => sanitizeAmount(v),
-      quantity: (v) => (v ? sanitizeInteger(v, SECURITY_LIMITS.MIN_QUANTITY, SECURITY_LIMITS.MAX_QUANTITY) : null),
-      unit_price: (v) => (v ? sanitizeAmount(v) : null),
-      group_id: (v) => (v === "none" ? v : sanitizeUUID(v) || "none"),
-      goal_id: (v) => (v === "none" ? v : sanitizeUUID(v) || "none"),
-      maturity_date: (v) => (v ? sanitizeDate(v) : null),
-    },
-    validators: {
-      name: (v) => ({
-        isValid: v.length > 0 && v.length <= SECURITY_LIMITS.MAX_NAME_LENGTH,
-        error: v.length === 0 ? "Nome obrigatório" : null,
-      }),
-      type: (v) => ({
-        isValid: ALLOWED_INVESTMENT_TYPES.includes(v as any),
-        error: !ALLOWED_INVESTMENT_TYPES.includes(v as any) ? "Tipo de investimento inválido" : null,
-      }),
-      amount: (v) => ({
-        isValid: v > 0,
-        error: v <= 0 ? "Valor deve ser maior que zero" : null,
-      }),
-    },
-    onSubmit: async (values) => {
-      await submitInvestment(values);
-    },
-  });
-
   const showQuantityPriceFields = formData.type === "Ações" || formData.type === "FIIs";
-
   useEffect(() => {
     if (open) {
       loadGroups();
-      loadInvestmentGoals();
     }
   }, [open]);
-
   const loadGroups = async () => {
     try {
       const { data, error } = await supabase.from("groups").select("id, name").order("name");
@@ -1626,219 +1565,218 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     }
   };
 
-  const loadInvestmentGoals = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
     try {
-      const { data, error } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
-      if (error) throw error;
-      setInvestmentGoals(data || []);
-    } catch (error) {
-      console.error("Erro ao carregar metas:", error);
-    }
-  };
-
-  const submitInvestment = async (values: FormData) => {
-    try {
-      const userId = await ensureAuthenticated();
-
-      if (values.group_id && values.group_id !== "none") {
-        const hasAccess = await checkGroupMembership(userId, values.group_id);
-        if (!hasAccess) {
-          throw new Error("Sem permissão para adicionar investimentos neste grupo");
-        }
-      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
 
       let calculatedAmount = 0;
+      let currentValue = 0;
       let quantity = null;
       let unitPrice = null;
 
       if (showQuantityPriceFields) {
-        if (!values.quantity || !values.unit_price) {
-          throw new Error("Preencha Quantidade e Valor Unitário para Ações/FIIs");
+        if (!formData.quantity || !formData.unit_price) {
+          toast({
+            title: "Erro",
+            description: "Preencha Quantidade e Valor Unitário para Ações/FIIs",
+            variant: "destructive",
+          });
+          return;
         }
-        quantity = values.quantity;
-        unitPrice = values.unit_price;
+        quantity = parseFloat(formData.quantity);
+        unitPrice = parseFloat(formData.unit_price);
         calculatedAmount = quantity * unitPrice;
+        currentValue = formData.current_value ? parseFloat(formData.current_value) : calculatedAmount;
       } else {
-        if (!values.amount || values.amount <= 0) {
-          throw new Error("Preencha o Valor Investido");
+        if (!formData.amount) {
+          toast({
+            title: "Erro",
+            description: "Preencha o Valor Investido",
+            variant: "destructive",
+          });
+          return;
         }
-        calculatedAmount = values.amount;
+        calculatedAmount = parseFloat(formData.amount);
+        currentValue = formData.current_value ? parseFloat(formData.current_value) : calculatedAmount;
       }
 
-      const validationResult = validateInvestmentData({
-        name: values.name!,
-        type: values.type!,
+      const investmentData: any = {
+        user_id: user.id,
+        name: formData.name,
+        type: formData.type,
         amount: calculatedAmount,
+        current_value: currentValue,
         quantity,
         unit_price: unitPrice,
-        group_id: values.group_id === "none" ? null : values.group_id,
-        maturity_date: values.maturity_date,
-      });
+        group_id: formData.group_id === "none" ? null : formData.group_id,
+        goal_id: formData.goal_id === "none" ? null : formData.goal_id, // Adicionado
+        maturity_date: formData.maturity_date || null,
+      };
+      const { error: insertError } = await supabase.from("investments").insert(investmentData);
 
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error || "Dados inválidos");
-      }
-
-      await withRateLimit(
-        `investment:${userId}`,
-        async () => {
-          const { error } = await supabase.from("investments").insert({
-            user_id: userId,
-            name: values.name,
-            type: values.type,
-            amount: calculatedAmount,
-            current_value: calculatedAmount,
-            quantity,
-            unit_price: unitPrice,
-            group_id: values.group_id === "none" ? null : values.group_id,
-            maturity_date: values.maturity_date,
-          });
-
-          if (error) throw error;
-
-          if (values.goal_id && values.goal_id !== "none") {
-            const { data: goalData, error: fetchError } = await supabase
-              .from("investment_goals")
-              .select("current_amount")
-              .eq("id", values.goal_id)
-              .single();
-
-            if (!fetchError && goalData) {
-              await supabase
-                .from("investment_goals")
-                .update({
-                  current_amount: goalData.current_amount + calculatedAmount,
-                })
-                .eq("id", values.goal_id);
-            }
-          }
-        },
-        30
-      );
-
+      if (insertError) throw insertError;
       toast({
         title: "Sucesso",
         description: "Investimento adicionado com sucesso!",
       });
 
-      resetForm();
+      // Chama o onSuccess passando o goal_id para o pai recalcular
+      onSuccess?.({ goal_id: investmentData.goal_id });
+
+      setFormData({
+        name: "",
+        type: "",
+        amount: "",
+        current_value: "",
+        quantity: "",
+        unit_price: "",
+        group_id: "none",
+        goal_id: "none", // Resetado
+        maturity_date: "",
+      });
       setOpen(false);
-      if (onSuccess) onSuccess();
     } catch (error) {
-      console.error("Erro ao criar investimento:", error);
+      console.error("Erro ao salvar investimento:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao criar investimento",
+        description: "Erro ao salvar o investimento. Tente novamente.",
         variant: "destructive",
       });
-      throw error;
+    } finally {
+      setLoading(false);
     }
   };
-
+  const defaultTrigger = (
+    <Button variant="outline" className="h-20 flex flex-col gap-2">
+      <PiggyBank className="h-6 w-6" />
+      <span className="text-sm">Investir</span>
+    </Button>
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger || <Button>Adicionar Investimento</Button>}</DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Adicionar Investimento</DialogTitle>
-          <DialogDescription>Preencha os dados do seu investimento</DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <PiggyBank className="h-5 w-5 text-primary" />
+            Novo Investimento
+          </DialogTitle>
+          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="name">Nome</Label>
+          <div className="space-y-2">
+            <Label htmlFor="name">Nome *</Label>
             <Input
               id="name"
-              value={formData.name}
-              onChange={(e) => handleChange("name", e.target.value)}
-              maxLength={SECURITY_LIMITS.MAX_NAME_LENGTH}
               placeholder="Ex: PETR4, MXRF11..."
+              value={formData.name}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              required
             />
-            {errors.name && <p className="text-sm text-destructive mt-1">{errors.name}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="type">Tipo</Label>
-            <Select value={formData.type} onValueChange={(value) => handleChange("type", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="type">Tipo *</Label>
+            <Select value={formData.type} onValueChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
-                {ALLOWED_INVESTMENT_TYPES.map((type) => (
+                {INVESTMENT_TYPES.map((type) => (
                   <SelectItem key={type} value={type}>
                     {type}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.type && <p className="text-sm text-destructive mt-1">{errors.type}</p>}
           </div>
 
           {showQuantityPriceFields ? (
             <>
-              <div>
-                <Label htmlFor="quantity">Quantidade</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  min="0"
-                  max={SECURITY_LIMITS.MAX_QUANTITY}
-                  value={formData.quantity || ""}
-                  onChange={(e) => handleChange("quantity", e.target.value)}
-                  placeholder="Ex: 100"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantidade *</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    value={formData.quantity}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        quantity: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit_price">Valor Unitário *</Label>
+                  <Input
+                    id="unit_price"
+                    type="number"
+                    step="0.01"
+                    placeholder="0,00"
+                    value={formData.unit_price}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        unit_price: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
               </div>
-
-              <div>
-                <Label htmlFor="unit_price">Valor Unitário</Label>
-                <Input
-                  id="unit_price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={SECURITY_LIMITS.MAX_AMOUNT}
-                  value={formData.unit_price || ""}
-                  onChange={(e) => handleChange("unit_price", e.target.value)}
-                  placeholder="Ex: 25.50"
-                />
-              </div>
-
               {formData.quantity && formData.unit_price && (
-                <div className="p-3 bg-muted rounded-md">
-                  <p className="text-sm text-muted-foreground">Valor Total</p>
-                  <p className="text-lg font-semibold">
-                    {(formData.quantity * formData.unit_price).toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
+                <div className="text-sm text-muted-foreground">
+                  Valor Total: R$ {(parseFloat(formData.quantity) * parseFloat(formData.unit_price)).toFixed(2)}
                 </div>
               )}
             </>
           ) : (
-            <div>
-              <Label htmlFor="amount">Valor Investido</Label>
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor Investido *</Label>
               <Input
                 id="amount"
                 type="number"
                 step="0.01"
-                min="0"
-                max={SECURITY_LIMITS.MAX_AMOUNT}
+                placeholder="0,00"
                 value={formData.amount}
-                onChange={(e) => handleChange("amount", e.target.value)}
-                placeholder="0.00"
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
               />
-              {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount}</p>}
             </div>
           )}
 
-          <div>
+          <div className="space-y-2">
+            <Label htmlFor="current_value">Valor Atual (opcional)</Label>
+            <Input
+              id="current_value"
+              type="number"
+              step="0.01"
+              placeholder="0,00"
+              value={formData.current_value}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  current_value: e.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => handleChange("group_id", value)}>
+            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhum grupo</SelectItem>
+                <SelectItem value="none">Pessoal</SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
@@ -1848,30 +1786,36 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div>
+          {/* NOVO CAMPO DE METAS */}
+          <div className="space-y-2">
             <Label htmlFor="goal">Meta (opcional)</Label>
-            <Select value={formData.goal_id} onValueChange={(value) => handleChange("goal_id", value)}>
+            <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Nenhuma meta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhuma meta</SelectItem>
-                {investmentGoals.map((goal) => (
+                <SelectItem value="none">Nenhuma</SelectItem>
+                {goals.map((goal) => (
                   <SelectItem key={goal.id} value={goal.id}>
-                    {goal.name} ({((goal.current_amount / goal.target_amount) * 100).toFixed(1)}% completo)
+                    {goal.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="maturity_date">Data de Vencimento (opcional)</Label>
             <Input
               id="maturity_date"
               type="date"
-              value={formData.maturity_date || ""}
-              onChange={(e) => handleChange("maturity_date", e.target.value)}
+              value={formData.maturity_date}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  maturity_date: e.target.value,
+                }))
+              }
             />
           </div>
 
@@ -1879,8 +1823,8 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSubmitting}>
-              {isSubmitting ? "Salvando..." : "Salvar"}
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </form>
@@ -3002,6 +2946,220 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\EditGroupDialog.tsx
+
+STARTOFFILE: src\components\dialogs\InvestmentAdjustmentDialog.tsx
+----------------------------------------
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Settings } from "lucide-react";
+
+interface AggregatedInvestment {
+  name: string;
+  type: string;
+  totalAmountInvested: number;
+  totalCurrentValue: number;
+  totalQuantity: number | null;
+  averagePrice: number | null;
+  firstInvestedAt: string;
+  recordIds: string[];
+}
+
+interface InvestmentAdjustmentDialogProps {
+  investment: AggregatedInvestment | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+}
+
+export const InvestmentAdjustmentDialog = ({ investment, open, onOpenChange, onSuccess }: InvestmentAdjustmentDialogProps) => {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    newCurrentValue: "",
+    notes: "",
+  });
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (investment) {
+      setFormData({
+        newCurrentValue: investment.totalCurrentValue.toString(),
+        notes: "",
+      });
+    }
+  }, [investment]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!investment) return;
+
+    setLoading(true);
+    try {
+      const newValue = parseFloat(formData.newCurrentValue);
+
+      if (isNaN(newValue) || newValue < 0) {
+        toast({
+          title: "Erro",
+          description: "Valor inválido",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const lastRecordId = investment.recordIds[investment.recordIds.length - 1];
+
+      const { error } = await supabase
+        .from("investments")
+        .update({
+          current_value: newValue,
+          quantity: null,
+          unit_price: null,
+        })
+        .eq("id", lastRecordId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Valor atualizado com sucesso!",
+      });
+
+      setFormData({
+        newCurrentValue: "",
+        notes: "",
+      });
+
+      onOpenChange(false);
+      onSuccess?.();
+    } catch (error) {
+      console.error("Erro ao atualizar investimento:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar o investimento. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!investment) return null;
+
+  const currentReturn =
+    investment.totalAmountInvested > 0
+      ? ((investment.totalCurrentValue - investment.totalAmountInvested) / investment.totalAmountInvested) * 100
+      : 0;
+
+  const newValue = parseFloat(formData.newCurrentValue) || 0;
+  const newReturn =
+    investment.totalAmountInvested > 0 ? ((newValue - investment.totalAmountInvested) / investment.totalAmountInvested) * 100 : 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-primary" />
+            Ajustar Investimento
+          </DialogTitle>
+          <DialogDescription>Atualize o valor atual de {investment.name}</DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4 p-4 bg-muted rounded-lg">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor Investido</span>
+              <span className="font-medium">
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(investment.totalAmountInvested)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Valor Atual</span>
+              <span className="font-medium">
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(investment.totalCurrentValue)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Rentabilidade Atual</span>
+              <span className={`font-medium ${currentReturn >= 0 ? "text-success" : "text-destructive"}`}>
+                {currentReturn >= 0 ? "+" : ""}
+                {currentReturn.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="newCurrentValue">Novo Valor Atual *</Label>
+            <Input
+              id="newCurrentValue"
+              type="number"
+              step="0.01"
+              placeholder="0,00"
+              value={formData.newCurrentValue}
+              onChange={(e) => setFormData((prev) => ({ ...prev, newCurrentValue: e.target.value }))}
+              required
+            />
+          </div>
+
+          {newValue > 0 && newValue !== investment.totalCurrentValue && (
+            <div className="space-y-2 p-4 bg-primary/10 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Nova Rentabilidade</span>
+                <span className={`font-medium ${newReturn >= 0 ? "text-success" : "text-destructive"}`}>
+                  {newReturn >= 0 ? "+" : ""}
+                  {newReturn.toFixed(2)}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Variação</span>
+                <span className={`font-medium ${newValue - investment.totalCurrentValue >= 0 ? "text-success" : "text-destructive"}`}>
+                  {new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(newValue - investment.totalCurrentValue)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="notes">Observações (opcional)</Label>
+            <Textarea
+              id="notes"
+              placeholder="Adicione observações sobre este ajuste..."
+              value={formData.notes}
+              onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+              rows={3}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={loading}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? "Salvando..." : "Salvar Ajuste"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\dialogs\InvestmentAdjustmentDialog.tsx
 
 STARTOFFILE: src\components\dialogs\InvestmentDetailsModal.tsx
 ----------------------------------------
@@ -8576,10 +8734,11 @@ ENDOFFILE: src\constants\investment-types.ts
 
 STARTOFFILE: src\contexts\AuthContext.tsx
 ----------------------------------------
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { User, Session } from "@supabase/supabase-js";
+
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface AuthContextType {
   user: User | null;
@@ -8595,7 +8754,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
@@ -8611,16 +8770,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
 
-    // THEN check for existing session
+      if (event === "SIGNED_IN") {
+        toast({
+          title: "Login realizado!",
+          description: "Bem-vindo ao sistema.",
+        });
+      }
+
+      if (event === "USER_UPDATED") {
+        toast({
+          title: "Perfil atualizado!",
+          description: "Suas informações foram atualizadas.",
+        });
+      }
+    });
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -8628,89 +8799,126 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [toast]);
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     try {
-      const redirectUrl = `${window.location.origin}/`;
-      
-      const { error } = await supabase.auth.signUp({
+      const redirectUrl = `${window.location.origin}/auth`;
+
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: redirectUrl,
           data: {
-            full_name: fullName
-          }
-        }
+            full_name: fullName,
+          },
+        },
       });
-      
+
       if (error) {
         toast({
           title: "Erro no cadastro",
           description: error.message,
-          variant: "destructive"
+          variant: "destructive",
         });
         return { error };
       }
 
+      if (data?.user?.identities?.length === 0) {
+        toast({
+          title: "Email já cadastrado",
+          description: "Este email já possui uma conta. Faça login ou recupere sua senha.",
+          variant: "destructive",
+        });
+        return { error: { message: "Email já cadastrado" } };
+      }
+
       toast({
         title: "Cadastro realizado!",
-        description: "Verifique seu email para ativar a conta."
+        description: "Enviamos um email de confirmação. Verifique sua caixa de entrada e spam.",
       });
-      
+
       return { error: null };
     } catch (error) {
-      console.error('Erro no cadastro:', error);
+      console.error("Erro no cadastro:", error);
+      toast({
+        title: "Erro no cadastro",
+        description: "Ocorreu um erro ao processar seu cadastro. Tente novamente.",
+        variant: "destructive",
+      });
       return { error };
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       });
-      
+
       if (error) {
-        toast({
-          title: "Erro no login",
-          description: error.message,
-          variant: "destructive"
-        });
+        if (error.message.includes("Email not confirmed")) {
+          toast({
+            title: "Email não confirmado",
+            description: "Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.",
+            variant: "destructive",
+          });
+        } else if (error.message.includes("Invalid login credentials")) {
+          toast({
+            title: "Credenciais inválidas",
+            description: "Email ou senha incorretos. Tente novamente.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Erro no login",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
         return { error };
       }
 
-      toast({
-        title: "Login realizado!",
-        description: "Bem-vindo ao sistema."
-      });
-      
+      if (data?.user && !data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        toast({
+          title: "Email não confirmado",
+          description: "Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.",
+          variant: "destructive",
+        });
+        return { error: { message: "Email não confirmado" } };
+      }
+
       return { error: null };
     } catch (error) {
-      console.error('Erro no login:', error);
+      console.error("Erro no login:", error);
+      toast({
+        title: "Erro no login",
+        description: "Ocorreu um erro ao fazer login. Tente novamente.",
+        variant: "destructive",
+      });
       return { error };
     }
   };
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        toast({
-          title: "Erro ao sair",
-          description: error.message,
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Logout realizado",
-          description: "Você foi desconectado com sucesso."
-        });
-      }
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      toast({
+        title: "Logout realizado",
+        description: "Até logo!",
+      });
     } catch (error) {
-      console.error('Erro no logout:', error);
+      console.error("Erro no logout:", error);
+      toast({
+        title: "Erro no logout",
+        description: "Ocorreu um erro ao fazer logout.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -8725,6 +8933,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
 ----------------------------------------
 ENDOFFILE: src\contexts\AuthContext.tsx
 
@@ -9684,7 +9893,6 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-gradient-primary flex items-center justify-center p-4">
       <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-8 items-center">
-        {/* Left side - Marketing */}
         <div className="hidden lg:block space-y-8 text-foreground">
           <div className="space-y-4">
             <h1 className="text-4xl font-bold bg-gradient-income bg-clip-text text-transparent">Controle Financeiro Inteligente</h1>
@@ -10524,31 +10732,15 @@ ENDOFFILE: src\pages\Index.tsx
 STARTOFFILE: src\pages\Investments.tsx
 ----------------------------------------
 import { useState, useEffect, useMemo } from "react";
-import {
-  TrendingUp,
-  TrendingDown,
-  PieChart,
-  Plus,
-  Target,
-  DollarSign,
-  Trash2,
-  Edit,
-  ChevronLeft,
-  ChevronRight,
-  MinusCircle,
-} from "@/lib/icons";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
+import { InvestmentDetailsModal } from "@/components/dialogs/InvestmentDetailsModal";
+import { InvestmentAdjustmentDialog } from "@/components/dialogs/InvestmentAdjustmentDialog";
 import { AddGoalDialog } from "@/components/dialogs/AddGoalDialog";
 import { EditGoalDialog } from "@/components/dialogs/EditGoalDialog";
-import { InvestmentDetailsModal } from "@/components/dialogs/InvestmentDetailsModal";
-import { RemoveInvestmentAmountDialog } from "@/components/dialogs/RemoveInvestmentAmountDialog";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10559,9 +10751,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { TrendingUp, Target, Plus, PieChart, Trash2, Edit, ChevronLeft, ChevronRight, Settings } from "@/lib/icons";
 
 interface InvestmentRecord {
   id: string;
@@ -10569,10 +10761,13 @@ interface InvestmentRecord {
   type: string;
   amount: number;
   current_value: number;
-  maturity_date?: string;
+  group_id: string | null;
+  maturity_date: string | null;
+  user_id: string;
   created_at: string;
   quantity: number | null;
   unit_price: number | null;
+  goal_id: string | null;
 }
 
 interface AggregatedInvestment {
@@ -10585,6 +10780,7 @@ interface AggregatedInvestment {
   firstInvestedAt: string;
   recordIds: string[];
   totalAmountForAvgPrice?: number;
+  goalIds: (string | null)[];
 }
 
 interface InvestmentGoal {
@@ -10617,17 +10813,14 @@ const Investments = () => {
   const { toast } = useToast();
 
   const GOALS_PER_PAGE = 3;
-
   useEffect(() => {
     loadData();
   }, []);
-
   const loadData = async () => {
     setLoading(true);
     await Promise.all([loadInvestments(), loadGoals()]);
     setLoading(false);
   };
-
   const loadInvestments = async () => {
     try {
       const { data, error } = await supabase
@@ -10646,64 +10839,6 @@ const Investments = () => {
       });
     }
   };
-
-  const aggregatedInvestments = useMemo(() => {
-    const aggregationMap = new Map<string, AggregatedInvestment>();
-
-    allInvestments.forEach((record) => {
-      const existing = aggregationMap.get(record.name);
-      const isStockOrFII = record.type === "Ações" || record.type === "FIIs";
-
-      if (existing) {
-        existing.totalAmountInvested += record.amount;
-        existing.totalCurrentValue += record.current_value;
-        existing.recordIds.push(record.id);
-
-        if (isStockOrFII && record.quantity !== null && record.quantity !== 0) {
-          existing.totalAmountForAvgPrice = (existing.totalAmountForAvgPrice ?? 0) + record.amount;
-          existing.totalQuantity = (existing.totalQuantity ?? 0) + record.quantity;
-        }
-
-        if (new Date(record.created_at) < new Date(existing.firstInvestedAt)) {
-          existing.firstInvestedAt = record.created_at;
-        }
-      } else {
-        let initialQuantity = null;
-        let initialAveragePrice = null;
-        let initialAmountForAvg = 0;
-
-        if (isStockOrFII && record.quantity !== null && record.quantity !== 0) {
-          initialQuantity = record.quantity;
-          initialAmountForAvg = record.amount;
-          initialAveragePrice = record.unit_price ?? record.amount / record.quantity;
-        }
-
-        aggregationMap.set(record.name, {
-          name: record.name,
-          type: record.type,
-          totalAmountInvested: record.amount,
-          totalCurrentValue: record.current_value,
-          totalQuantity: initialQuantity,
-          averagePrice: initialAveragePrice,
-          firstInvestedAt: record.created_at,
-          recordIds: [record.id],
-          totalAmountForAvgPrice: initialAmountForAvg,
-        });
-      }
-    });
-
-    aggregationMap.forEach((agg) => {
-      if (agg.totalQuantity !== null && agg.totalQuantity !== 0 && agg.totalAmountForAvgPrice !== undefined) {
-        agg.averagePrice = agg.totalAmountForAvgPrice / agg.totalQuantity;
-      } else if (agg.totalQuantity === 0) {
-        agg.averagePrice = 0;
-      } else {
-        agg.averagePrice = null;
-      }
-    });
-
-    return Array.from(aggregationMap.values());
-  }, [allInvestments]);
 
   const loadGoals = async () => {
     try {
@@ -10724,6 +10859,77 @@ const Investments = () => {
     }
   };
 
+  /**
+   * CORREÇÃO: Esta função agora soma 'current_value' em vez de 'amount'
+   * para refletir o valor atualizado dos investimentos na meta.
+   */
+  const recalculateGoalAmount = async (goalId: string) => {
+    try {
+      const { data: investments, error: investmentsError } = await supabase
+        .from("investments")
+        .select("current_value") // Corrigido de "amount" para "current_value"
+        .eq("goal_id", goalId);
+      if (investmentsError) throw investmentsError;
+
+      const totalAmount = investments?.reduce((sum, inv) => sum + inv.current_value, 0) || 0; // Corrigido de inv.amount
+      const { error: updateError } = await supabase.from("investment_goals").update({ current_amount: totalAmount }).eq("id", goalId);
+
+      if (updateError) throw updateError;
+
+      await loadGoals();
+    } catch (error) {
+      console.error("Erro ao recalcular valor da meta:", error);
+    }
+  };
+
+  // NOVA FUNÇÃO: Handler para o onSuccess do AddInvestmentDialog
+  const handleAddInvestmentSuccess = async (addedInvestment: { goal_id: string | null }) => {
+    if (addedInvestment.goal_id) {
+      await recalculateGoalAmount(addedInvestment.goal_id);
+    }
+    await loadInvestments(); // Recarrega a lista de investimentos
+  };
+
+  const aggregatedInvestments = useMemo(() => {
+    const aggregationMap = new Map<string, AggregatedInvestment>();
+
+    allInvestments.forEach((record) => {
+      const existing = aggregationMap.get(record.name);
+      const isStockOrFII = record.type === "Ações" || record.type === "FIIs";
+
+      if (existing) {
+        existing.totalAmountInvested += record.amount;
+        existing.totalCurrentValue += record.current_value;
+        existing.recordIds.push(record.id);
+        existing.goalIds.push(record.goal_id);
+
+        if (isStockOrFII && record.quantity !== null && record.quantity !== 0) {
+          existing.totalAmountForAvgPrice = (existing.totalAmountForAvgPrice || 0) + record.amount;
+          existing.totalQuantity = (existing.totalQuantity || 0) + record.quantity;
+
+          if (existing.totalQuantity > 0) {
+            existing.averagePrice = existing.totalAmountForAvgPrice / existing.totalQuantity;
+          }
+        }
+      } else {
+        aggregationMap.set(record.name, {
+          name: record.name,
+          type: record.type,
+          totalAmountInvested: record.amount,
+          totalCurrentValue: record.current_value,
+          totalQuantity: isStockOrFII && record.quantity !== null ? record.quantity : null,
+          averagePrice: isStockOrFII && record.unit_price !== null ? record.unit_price : null,
+          firstInvestedAt: record.created_at,
+          recordIds: [record.id],
+          totalAmountForAvgPrice: isStockOrFII && record.quantity !== null && record.quantity !== 0 ? record.amount : undefined,
+          goalIds: [record.goal_id],
+        });
+      }
+    });
+
+    return Array.from(aggregationMap.values());
+  }, [allInvestments]);
+
   const handleDeleteClick = (investmentId: string) => {
     setInvestmentToDelete(investmentId);
     setDeleteDialogOpen(true);
@@ -10732,8 +10938,13 @@ const Investments = () => {
   const handleDeleteConfirm = async () => {
     if (!investmentToDelete) return;
     try {
+      const investmentToRemove = allInvestments.find((inv) => inv.id === investmentToDelete);
+      const goalId = investmentToRemove?.goal_id;
       const { error } = await supabase.from("investments").delete().eq("id", investmentToDelete);
       if (error) throw error;
+      if (goalId) {
+        await recalculateGoalAmount(goalId);
+      }
 
       toast({
         title: "Sucesso",
@@ -10752,18 +10963,15 @@ const Investments = () => {
       setInvestmentToDelete(null);
     }
   };
-
   const handleDeleteGoalClick = (goalId: string) => {
     setGoalToDelete(goalId);
     setDeleteGoalDialogOpen(true);
   };
-
   const handleDeleteGoalConfirm = async () => {
     if (!goalToDelete) return;
     try {
       const { error } = await supabase.from("investment_goals").delete().eq("id", goalToDelete);
       if (error) throw error;
-
       toast({
         title: "Sucesso",
         description: "Meta removida com sucesso!",
@@ -10782,21 +10990,31 @@ const Investments = () => {
       setGoalToDelete(null);
     }
   };
-
   const handleEditGoalClick = (goal: InvestmentGoal) => {
     setGoalToEdit(goal);
     setEditGoalDialogOpen(true);
   };
-
   const handleEditGoalClose = () => {
     setEditGoalDialogOpen(false);
     setGoalToEdit(null);
   };
+  const handleAdjustmentClick = (investment: AggregatedInvestment) => {
+    setAdjustmentTarget(investment);
+  };
+  const handleAdjustmentSuccess = async () => {
+    const uniqueGoalIds = [...new Set(adjustmentTarget?.goalIds.filter((id) => id !== null))];
+    for (const goalId of uniqueGoalIds) {
+      if (goalId) {
+        await recalculateGoalAmount(goalId);
+      }
+    }
 
+    await loadInvestments();
+    setAdjustmentTarget(null);
+  };
   const totalInvested = allInvestments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrentValue = allInvestments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
-
   const investmentTypes = [...new Set(aggregatedInvestments.map((inv) => inv.type))];
 
   const getTypeData = (type: string) => {
@@ -10813,18 +11031,14 @@ const Investments = () => {
 
   const paginatedAggregatedInvestments = aggregatedInvestments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPages = Math.ceil(aggregatedInvestments.length / itemsPerPage);
-
   const paginatedGoals = goals.slice(goalPage * GOALS_PER_PAGE, (goalPage + 1) * GOALS_PER_PAGE);
   const totalGoalPages = Math.ceil(goals.length / GOALS_PER_PAGE);
-
   const handlePreviousGoals = () => {
     if (goalPage > 0) setGoalPage(goalPage - 1);
   };
-
   const handleNextGoals = () => {
     if (goalPage < totalGoalPages - 1) setGoalPage(goalPage + 1);
   };
-
   if (loading) {
     return (
       <DashboardLayout>
@@ -10848,91 +11062,60 @@ const Investments = () => {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
-            <p className="text-muted-foreground">Acompanhe o desempenho da sua carteira de investimentos</p>
+            <p className="text-muted-foreground">Acompanhe e gerencie seu portfólio</p>
           </div>
-          <div className="flex gap-2">
-            <AddGoalDialog
-              onSuccess={() => {
-                loadGoals();
-                setGoalPage(0);
-              }}
-            />
-            <AddInvestmentDialog
-              trigger={
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Novo Investimento
-                </Button>
-              }
-              onSuccess={loadInvestments}
-            />
-          </div>
+          {/* MODIFICADO: Passando goals e usando o novo handler */}
+          <AddInvestmentDialog onSuccess={handleAddInvestmentSuccess} goals={goals} />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total Investido</p>
-                  <p className="text-2xl font-bold">
-                    {totalInvested.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
-                </div>
-                <DollarSign className="h-8 w-8 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Investido</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(totalInvested)}
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Valor Atual</p>
-                  <p className="text-2xl font-bold">
-                    {totalCurrentValue.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
-                </div>
-                <PieChart className="h-8 w-8 text-primary" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Valor Atual</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(totalCurrentValue)}
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Lucro/Prejuízo</p>
-                  <p className={cn("text-2xl font-bold", totalReturn >= 0 ? "text-success" : "text-destructive")}>
-                    {(totalCurrentValue - totalInvested).toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
-                </div>
-                {totalReturn >= 0 ? <TrendingUp className="h-8 w-8 text-success" /> : <TrendingDown className="h-8 w-8 text-destructive" />}
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Rentabilidade</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${totalReturn >= 0 ? "text-success" : "text-destructive"}`}>
+                {totalReturn >= 0 ? "+" : ""}
+                {totalReturn.toFixed(2)}%
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Rentabilidade</p>
-                  <p className={cn("text-2xl font-bold", totalReturn >= 0 ? "text-success" : "text-destructive")}>
-                    {totalReturn >= 0 ? "+" : ""}
-                    {totalReturn.toFixed(2)}%
-                  </p>
-                </div>
-                <Target className="h-8 w-8 text-primary" />
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {totalReturn >= 0 ? "+" : ""}
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(totalCurrentValue - totalInvested)}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -10946,69 +11129,82 @@ const Investments = () => {
                     <Target className="h-5 w-5" />
                     Metas de Investimento
                   </CardTitle>
-                  <CardDescription>Acompanhe o progresso das suas metas</CardDescription>
+                  <CardDescription>Acompanhe o progresso das suas metas financeiras</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon" onClick={handlePreviousGoals} disabled={goalPage === 0}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm text-muted-foreground px-2">
-                    {goalPage + 1} / {totalGoalPages}
-                  </span>
-                  <Button variant="outline" size="icon" onClick={handleNextGoals} disabled={goalPage >= totalGoalPages - 1}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                  {totalGoalPages > 1 && (
+                    <>
+                      <Button variant="outline" size="icon" onClick={handlePreviousGoals} disabled={goalPage === 0}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {goalPage + 1} / {totalGoalPages}
+                      </span>
+                      <Button variant="outline" size="icon" onClick={handleNextGoals} disabled={goalPage >= totalGoalPages - 1}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                  <AddGoalDialog onSuccess={loadGoals} />
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {paginatedGoals.map((goal) => {
-                  const progress = (goal.current_amount / goal.target_amount) * 100;
+                  const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
                   return (
-                    <div key={goal.id} className="p-4 border rounded-lg space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            Prioridade {goal.priority}
-                          </Badge>
-                          <h3 className="font-semibold">{goal.name}</h3>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditGoalClick(goal)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteGoalClick(goal.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                    <Card key={goal.id} className="relative">
+                      <div className="absolute top-4 right-4 flex gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditGoalClick(goal)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => handleDeleteGoalClick(goal.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      {goal.description && <p className="text-sm text-muted-foreground">{goal.description}</p>}
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Progresso</span>
-                          <span className="font-semibold">{progress.toFixed(1)}%</span>
+                      <CardHeader>
+                        <CardTitle className="text-lg pr-16">{goal.name}</CardTitle>
+                        {goal.description && <CardDescription>{goal.description}</CardDescription>}
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Progresso</span>
+                            <span className="font-medium">{Math.min(progress, 100).toFixed(1)}%</span>
+                          </div>
+                          <Progress value={Math.min(progress, 100)} className="h-2" />
                         </div>
-                        <Progress value={progress} className="h-2" />
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            {goal.current_amount.toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}
-                          </span>
-                          <span className="font-semibold">
-                            {goal.target_amount.toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}
-                          </span>
+                          <div>
+                            <p className="text-muted-foreground">Atual</p>
+                            <p className="font-medium">
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(goal.current_amount)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-muted-foreground">Meta</p>
+                            <p className="font-medium">
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(goal.target_amount)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      {goal.target_date && (
-                        <p className="text-xs text-muted-foreground">Meta: {new Date(goal.target_date).toLocaleDateString("pt-BR")}</p>
-                      )}
-                    </div>
+                        {goal.target_date && (
+                          <p className="text-xs text-muted-foreground">Prazo: {new Date(goal.target_date).toLocaleDateString("pt-BR")}</p>
+                        )}
+                      </CardContent>
+                    </Card>
                   );
                 })}
               </div>
@@ -11019,32 +11215,33 @@ const Investments = () => {
         {investmentTypes.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PieChart className="h-5 w-5" />
-                Distribuição por Tipo
-              </CardTitle>
+              <CardTitle>Distribuição por Tipo</CardTitle>
+              <CardDescription>Composição do seu portfólio</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-4">
                 {investmentTypes.map((type) => {
                   const { typeTotal, typePercentage } = getTypeData(type);
                   return (
-                    <Card key={type} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => handleTypeClick(type)}>
-                      <CardContent className="p-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold">{type}</h4>
-                            <Badge variant="outline">{typePercentage.toFixed(1)}%</Badge>
-                          </div>
-                          <p className="text-2xl font-bold">
-                            {typeTotal.toLocaleString("pt-BR", {
+                    <div
+                      key={type}
+                      className="space-y-2 cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => handleTypeClick(type)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">{type}</span>
+                        <div className="text-right">
+                          <p className="font-medium">
+                            {new Intl.NumberFormat("pt-BR", {
                               style: "currency",
                               currency: "BRL",
-                            })}
+                            }).format(typeTotal)}
                           </p>
+                          <p className="text-sm text-muted-foreground">{typePercentage.toFixed(1)}%</p>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                      <Progress value={typePercentage} className="h-2" />
+                    </div>
                   );
                 })}
               </div>
@@ -11055,133 +11252,96 @@ const Investments = () => {
         {aggregatedInvestments.length > 0 ? (
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Meus Ativos</CardTitle>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="items-per-page" className="text-sm">
-                      Itens por página:
-                    </Label>
-                    <Select
-                      value={itemsPerPage.toString()}
-                      onValueChange={(value) => {
-                        setItemsPerPage(parseInt(value));
-                        setCurrentPage(1);
-                      }}
-                    >
-                      <SelectTrigger id="items-per-page" className="w-[100px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5</SelectItem>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
+              <CardTitle>Ativos Consolidados</CardTitle>
+              <CardDescription>Visão agregada dos seus investimentos</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {paginatedAggregatedInvestments.map((aggInvestment) => {
-                  const totalReturnValue = aggInvestment.totalCurrentValue - aggInvestment.totalAmountInvested;
-                  const totalReturnPercentage =
-                    aggInvestment.totalAmountInvested > 0 ? (totalReturnValue / aggInvestment.totalAmountInvested) * 100 : 0;
-                  const isStockOrFII = aggInvestment.type === "Ações" || aggInvestment.type === "FIIs";
+                  const investmentReturn =
+                    aggInvestment.totalAmountInvested > 0
+                      ? ((aggInvestment.totalCurrentValue - aggInvestment.totalAmountInvested) / aggInvestment.totalAmountInvested) * 100
+                      : 0;
 
                   return (
-                    <Card key={aggInvestment.name} className="group">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">
+                    <Card key={aggInvestment.name} className="relative">
+                      <CardContent className="pt-6">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                          <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-semibold">{aggInvestment.name}</h4>
-                              <Badge variant="secondary">{aggInvestment.type}</Badge>
+                              <h3 className="text-lg font-semibold">{aggInvestment.name}</h3>
+                              <span className="text-xs px-2 py-1 bg-muted rounded-full">{aggInvestment.type}</span>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-1 text-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
-                                <p className="text-muted-foreground truncate">Total Investido</p>
-                                <p className="font-semibold truncate">
-                                  {aggInvestment.totalAmountInvested.toLocaleString("pt-BR", {
+                                <p className="text-muted-foreground">Investido</p>
+                                <p className="font-medium">
+                                  {new Intl.NumberFormat("pt-BR", {
                                     style: "currency",
                                     currency: "BRL",
-                                  })}
+                                  }).format(aggInvestment.totalAmountInvested)}
                                 </p>
                               </div>
-
-                              {isStockOrFII && (
-                                <div>
-                                  <p className="text-muted-foreground truncate">Quantidade</p>
-                                  <p className="font-semibold truncate">{aggInvestment.totalQuantity}</p>
-                                </div>
-                              )}
-
-                              {isStockOrFII && aggInvestment.averagePrice !== null && (
-                                <div>
-                                  <p className="text-muted-foreground truncate">Preço Médio</p>
-                                  <p className="font-semibold truncate">
-                                    {aggInvestment.averagePrice.toLocaleString("pt-BR", {
-                                      style: "currency",
-                                      currency: "BRL",
-                                    })}
-                                  </p>
-                                </div>
-                              )}
-
-                              {!isStockOrFII && <div className="hidden md:block"></div>}
-                              {!isStockOrFII && <div className="hidden md:block"></div>}
-
                               <div>
-                                <p className="text-muted-foreground truncate">Valor Atual</p>
-                                <p className="font-semibold truncate">
-                                  {aggInvestment.totalCurrentValue.toLocaleString("pt-BR", {
+                                <p className="text-muted-foreground">Valor Atual</p>
+                                <p className="font-medium">
+                                  {new Intl.NumberFormat("pt-BR", {
                                     style: "currency",
                                     currency: "BRL",
-                                  })}
+                                  }).format(aggInvestment.totalCurrentValue)}
                                 </p>
                               </div>
-
+                              {aggInvestment.totalQuantity !== null && (
+                                <>
+                                  <div>
+                                    <p className="text-muted-foreground">Quantidade</p>
+                                    <p className="font-medium">{aggInvestment.totalQuantity}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Preço Médio</p>
+                                    <p className="font-medium">
+                                      {new Intl.NumberFormat("pt-BR", {
+                                        style: "currency",
+                                        currency: "BRL",
+                                      }).format(aggInvestment.averagePrice || 0)}
+                                    </p>
+                                  </div>
+                                </>
+                              )}
                               <div>
-                                <p className="text-muted-foreground truncate">Rentabilidade</p>
-                                <div
-                                  className={cn("font-semibold truncate", totalReturnPercentage >= 0 ? "text-success" : "text-destructive")}
-                                >
-                                  {totalReturnPercentage >= 0 ? "+" : ""}
-                                  {totalReturnPercentage.toFixed(2)}%
-                                </div>
-                              </div>
-
-                              <div>
-                                <p className="text-muted-foreground truncate">Lucro/Prejuízo</p>
-                                <div className={cn("font-semibold truncate", totalReturnValue >= 0 ? "text-success" : "text-destructive")}>
-                                  {totalReturnValue >= 0 ? "+" : ""}
-                                  {totalReturnValue.toLocaleString("pt-BR", {
-                                    style: "currency",
-                                    currency: "BRL",
-                                  })}
-                                </div>
+                                <p className="text-muted-foreground">Rentabilidade</p>
+                                <p className={`font-medium ${investmentReturn >= 0 ? "text-success" : "text-destructive"}`}>
+                                  {investmentReturn >= 0 ? "+" : ""}
+                                  {investmentReturn.toFixed(2)}%
+                                </p>
                               </div>
                             </div>
                           </div>
-
-                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex gap-2">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="icon"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
-                              onClick={() => setAdjustmentTarget(aggInvestment)}
-                              title="Remover valor específico"
+                              onClick={() => handleAdjustmentClick(aggInvestment)}
+                              title="Ajustar investimento"
                             >
-                              <MinusCircle className="h-4 w-4" />
+                              <Settings className="h-4 w-4" />
                             </Button>
-
-                            {aggInvestment.recordIds.length > 0 && (
+                            {aggInvestment.recordIds.length === 1 && (
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="icon"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
+                                className="text-destructive"
+                                onClick={() => handleDeleteClick(aggInvestment.recordIds[0])}
+                                title="Remover investimento"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {aggInvestment.recordIds.length > 1 && (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="text-destructive"
                                 onClick={() => handleDeleteClick(aggInvestment.recordIds[aggInvestment.recordIds.length - 1])}
                                 title="Remover último registro adicionado"
                               >
@@ -11228,14 +11388,15 @@ const Investments = () => {
               <PieChart className="h-16 w-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
               <p className="text-muted-foreground mb-4 text-center">Comece a acompanhar seus investimentos agora</p>
+              {/* MODIFICADO: Passando goals e usando o novo handler */}
               <AddInvestmentDialog
                 trigger={
                   <Button>
-                    {" "}
-                    <Plus className="h-4 w-4 mr-2" /> Adicionar Primeiro Investimento{" "}
+                    <Plus className="h-4 w-4 mr-2" /> Adicionar Primeiro Investimento
                   </Button>
                 }
-                onSuccess={loadInvestments}
+                onSuccess={handleAddInvestmentSuccess}
+                goals={goals}
               />
             </CardContent>
           </Card>
@@ -11245,22 +11406,43 @@ const Investments = () => {
           open={modalOpen}
           onOpenChange={setModalOpen}
           type={selectedType}
-          investments={selectedType ? getTypeData(selectedType).typeInvestments : []}
+          investments={selectedType ? allInvestments.filter((inv) => inv.type === selectedType) : []}
         />
 
-        <EditGoalDialog goal={goalToEdit} isOpen={editGoalDialogOpen} onClose={handleEditGoalClose} onSuccess={loadGoals} />
+        {adjustmentTarget && (
+          <InvestmentAdjustmentDialog
+            open={!!adjustmentTarget}
+            onOpenChange={(open) => !open && setAdjustmentTarget(null)}
+            investment={adjustmentTarget}
+            onSuccess={handleAdjustmentSuccess}
+          />
+        )}
+
+        {goalToEdit && (
+          <EditGoalDialog
+            open={editGoalDialogOpen}
+            onOpenChange={setEditGoalDialogOpen}
+            goal={goalToEdit}
+            onSuccess={loadGoals}
+            onClose={handleEditGoalClose}
+          />
+        )}
 
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+              <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita.
+                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita e atualizará automaticamente
+                os valores das metas associadas.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">
+              <AlertDialogAction
+                onClick={handleDeleteConfirm}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
                 Remover
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -11270,27 +11452,22 @@ const Investments = () => {
         <AlertDialog open={deleteGoalDialogOpen} onOpenChange={setDeleteGoalDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar remoção de meta</AlertDialogTitle>
-              <AlertDialogDescription>Tem certeza que deseja remover esta meta? Esta ação não pode ser desfeita.</AlertDialogDescription>
+              <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover esta meta de investimento? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteGoalConfirm} className="bg-destructive hover:bg-destructive/90">
+              <AlertDialogAction
+                onClick={handleDeleteGoalConfirm}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
                 Remover
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        <RemoveInvestmentAmountDialog
-          investment={adjustmentTarget}
-          isOpen={!!adjustmentTarget}
-          onClose={() => setAdjustmentTarget(null)}
-          onSuccess={() => {
-            loadInvestments();
-            setAdjustmentTarget(null);
-          }}
-        />
       </div>
     </DashboardLayout>
   );
