@@ -1,9 +1,9 @@
 # Code Merge Output
-Generated at: 2025-11-06T18:19:28.927Z
+Generated at: 2025-11-06T20:50:39.133Z
 Source path: .
 Files processed: 118
 Total lines: 13905
-Total characters: 483398
+Total characters: 483450
 
 File types:
   - tsx: 81 files (10.677 lines)
@@ -13768,10 +13768,9 @@ STARTOFFILE: src\utils\services\pushNotificationService.ts
 ----------------------------------------
 import { supabase } from "@/integrations/supabase/client";
 
-import type { PushSubscription } from "@/utils/types/reminder";
-
+import type { PushSubscription } from "@/utils/types/reminder.types";
 const PUBLIC_VAPID_KEY =
-  import.meta.env.VITE_VAPID_PUBLIC_KEY || "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nqm5lM";
+  import.meta.env.VITE_VAPID_PUBLIC_KEY || "BETwmgmXXkeAecI8eHXj-kCKkj_0c-qDX3znwN4oCgQUn2QAblyPI3E1Sc3xLgurcNnz12-K8AuUYyTyQLIFXT4";
 
 export class PushNotificationService {
   private static instance: PushNotificationService;
@@ -13856,7 +13855,7 @@ export class PushNotificationService {
         is_active: true,
       };
       const { data, error } = await supabase
-        .from("push_subscriptions")
+        .from("push_subscriptions" as any)
         .upsert(subscriptionData, { onConflict: "endpoint" })
         .select()
         .single();
@@ -13909,7 +13908,6 @@ export class PushNotificationService {
     return subscription !== null;
   }
 
-  // FUNÇÃO 'showNotification' MODIFICADA
   async showNotification(title: string, options?: NotificationOptions): Promise<void> {
     const permission = await this.getPermissionState();
     if (permission !== "granted") {
@@ -13936,7 +13934,6 @@ export class PushNotificationService {
       }
     }
 
-    // Envia uma mensagem para o Service Worker
     try {
       this.registration.active?.postMessage({
         type: "show-notification",
@@ -13952,7 +13949,6 @@ export class PushNotificationService {
       console.log("Mensagem de notificação enviada ao Service Worker:", title);
     } catch (error) {
       console.error("Erro ao enviar mensagem para o Service Worker:", error);
-      // Fallback se o postMessage falhar
       try {
         new Notification(title, {
           icon: "/icons/icon-192x192.png",
@@ -13967,6 +13963,7 @@ export class PushNotificationService {
   }
 
   private urlBase64ToUint8Array(base64String: string): Uint8Array {
+    // <-- MUDE O TIPO DE RETORNO PARA Uint8Array
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
 
@@ -13975,7 +13972,10 @@ export class PushNotificationService {
     for (let i = 0; i < rawData.length; ++i) {
       outputArray[i] = rawData.charCodeAt(i);
     }
-    return outputArray;
+
+    // === ESTA É A CORREÇÃO ===
+    // Mude de: return outputArray.buffer.slice(0);
+    return outputArray; // Retorne o Uint8Array diretamente
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer | null): string {

@@ -1,7 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
 import type { PushSubscription } from "@/utils/types/reminder.types";
-
 const PUBLIC_VAPID_KEY =
   import.meta.env.VITE_VAPID_PUBLIC_KEY || "BETwmgmXXkeAecI8eHXj-kCKkj_0c-qDX3znwN4oCgQUn2QAblyPI3E1Sc3xLgurcNnz12-K8AuUYyTyQLIFXT4";
 
@@ -141,7 +140,6 @@ export class PushNotificationService {
     return subscription !== null;
   }
 
-  // FUNÇÃO 'showNotification' MODIFICADA
   async showNotification(title: string, options?: NotificationOptions): Promise<void> {
     const permission = await this.getPermissionState();
     if (permission !== "granted") {
@@ -168,7 +166,6 @@ export class PushNotificationService {
       }
     }
 
-    // Envia uma mensagem para o Service Worker
     try {
       this.registration.active?.postMessage({
         type: "show-notification",
@@ -184,7 +181,6 @@ export class PushNotificationService {
       console.log("Mensagem de notificação enviada ao Service Worker:", title);
     } catch (error) {
       console.error("Erro ao enviar mensagem para o Service Worker:", error);
-      // Fallback se o postMessage falhar
       try {
         new Notification(title, {
           icon: "/icons/icon-192x192.png",
@@ -198,7 +194,8 @@ export class PushNotificationService {
     }
   }
 
-  private urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  private urlBase64ToUint8Array(base64String: string): Uint8Array {
+    // <-- MUDE O TIPO DE RETORNO PARA Uint8Array
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
 
@@ -207,8 +204,10 @@ export class PushNotificationService {
     for (let i = 0; i < rawData.length; ++i) {
       outputArray[i] = rawData.charCodeAt(i);
     }
-    // ensure we return a plain ArrayBuffer (BufferSource) compatible with PushManager
-    return outputArray.buffer.slice(0);
+
+    // === ESTA É A CORREÇÃO ===
+    // Mude de: return outputArray.buffer.slice(0);
+    return outputArray; // Retorne o Uint8Array diretamente
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer | null): string {
