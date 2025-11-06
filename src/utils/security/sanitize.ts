@@ -1,24 +1,24 @@
-import DOMPurify from 'dompurify';
+import DOMPurify from "dompurify";
 
-import { SECURITY_LIMITS, SQL_INJECTION_PATTERNS, XSS_PATTERNS } from './constants';
+import { SECURITY_LIMITS, SQL_INJECTION_PATTERNS, XSS_PATTERNS } from "./constants";
 
 export const sanitizeString = (input: string, maxLength: number = SECURITY_LIMITS.MAX_STRING_LENGTH): string => {
-  if (typeof input !== 'string') {
-    return '';
+  if (typeof input !== "string") {
+    return "";
   }
 
   let sanitized = input.trim();
-  
+
   sanitized = sanitized.slice(0, maxLength);
-  
-  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
-  
+
+  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
+
   return sanitized;
 };
 
 export const sanitizeHTML = (input: string): string => {
-  if (typeof input !== 'string') {
-    return '';
+  if (typeof input !== "string") {
+    return "";
   }
 
   return DOMPurify.sanitize(input, {
@@ -29,8 +29,8 @@ export const sanitizeHTML = (input: string): string => {
 };
 
 export const sanitizeNumber = (input: string | number): number => {
-  const parsed = typeof input === 'string' ? parseFloat(input) : input;
-  
+  const parsed = typeof input === "string" ? parseFloat(input) : input;
+
   if (isNaN(parsed) || !isFinite(parsed)) {
     return 0;
   }
@@ -40,11 +40,11 @@ export const sanitizeNumber = (input: string | number): number => {
 
 export const sanitizeAmount = (input: string | number): number => {
   const amount = sanitizeNumber(input);
-  
+
   if (amount > SECURITY_LIMITS.MAX_AMOUNT) {
     return SECURITY_LIMITS.MAX_AMOUNT;
   }
-  
+
   if (amount < SECURITY_LIMITS.MIN_AMOUNT) {
     return SECURITY_LIMITS.MIN_AMOUNT;
   }
@@ -53,8 +53,8 @@ export const sanitizeAmount = (input: string | number): number => {
 };
 
 export const sanitizeInteger = (input: string | number, min: number = 0, max: number = Number.MAX_SAFE_INTEGER): number => {
-  const parsed = typeof input === 'string' ? parseInt(input, 10) : Math.floor(input);
-  
+  const parsed = typeof input === "string" ? parseInt(input, 10) : Math.floor(input);
+
   if (isNaN(parsed) || !isFinite(parsed)) {
     return min;
   }
@@ -71,28 +71,25 @@ export const sanitizeInteger = (input: string | number, min: number = 0, max: nu
 };
 
 export const detectSQLInjection = (input: string): boolean => {
-  return SQL_INJECTION_PATTERNS.some(pattern => pattern.test(input));
+  return SQL_INJECTION_PATTERNS.some((pattern) => pattern.test(input));
 };
 
 export const detectXSS = (input: string): boolean => {
-  return XSS_PATTERNS.some(pattern => pattern.test(input));
+  return XSS_PATTERNS.some((pattern) => pattern.test(input));
 };
 
 export const sanitizeInput = (input: string, maxLength?: number): string => {
   const cleaned = sanitizeString(input, maxLength);
   const htmlSafe = sanitizeHTML(cleaned);
-  
+
   if (detectSQLInjection(htmlSafe) || detectXSS(htmlSafe)) {
-    return '';
+    return "";
   }
 
   return htmlSafe;
 };
 
-export const sanitizeObject = <T extends Record<string, any>>(
-  obj: T,
-  sanitizers: Partial<Record<keyof T, (value: any) => any>>
-): T => {
+export const sanitizeObject = <T extends Record<string, any>>(obj: T, sanitizers: Partial<Record<keyof T, (value: any) => any>>): T => {
   const sanitized = { ...obj };
 
   for (const key in sanitizers) {
@@ -107,11 +104,7 @@ export const sanitizeObject = <T extends Record<string, any>>(
   return sanitized;
 };
 
-export const sanitizeArray = <T>(
-  arr: T[],
-  itemSanitizer: (item: T) => T,
-  maxLength: number = 1000
-): T[] => {
+export const sanitizeArray = <T>(arr: T[], itemSanitizer: (item: T) => T, maxLength: number = 1000): T[] => {
   if (!Array.isArray(arr)) {
     return [];
   }
@@ -121,28 +114,43 @@ export const sanitizeArray = <T>(
 
 export const sanitizeUUID = (input: string): string | null => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  
-  if (typeof input === 'string' && uuidRegex.test(input.trim())) {
+
+  if (typeof input === "string" && uuidRegex.test(input.trim())) {
     return input.trim().toLowerCase();
   }
 
   return null;
 };
 
-export const sanitizeDate = (input: string | Date): string | null => {
+export const sanitizeDate = (input: string | Date | null): string | null => {
+  if (!input) return null;
+
   try {
-    const date = typeof input === 'string' ? new Date(input) : input;
-    
-    if (isNaN(date.getTime())) {
-      return null;
+    let dateStr: string;
+
+    if (typeof input === "string") {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+        return input;
+      }
+      dateStr = input;
+    } else {
+      const year = input.getFullYear();
+      const month = String(input.getMonth() + 1).padStart(2, "0");
+      const day = String(input.getDate()).padStart(2, "0");
+      dateStr = `${year}-${month}-${day}`;
     }
 
-    const year = date.getFullYear();
+    const [year, month, day] = dateStr.split("T")[0].split("-").map(Number);
+
     if (year < 1900 || year > 2100) {
       return null;
     }
 
-    return date.toISOString().split('T')[0];
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return null;
+    }
+
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   } catch {
     return null;
   }
@@ -171,10 +179,5 @@ export const sanitizeColor = (color: string): string | null => {
 };
 
 export const escapeRegExp = (string: string): string => {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
-
-export const sanitizeSearchTerm = (term: string): string => {
-  const cleaned = sanitizeString(term, 255);
-  return escapeRegExp(cleaned);
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };

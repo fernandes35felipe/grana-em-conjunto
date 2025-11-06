@@ -41,13 +41,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUser(session?.user ?? null);
       setLoading(false);
 
-      if (event === "SIGNED_IN") {
-        toast({
-          title: "Login realizado!",
-          description: "Bem-vindo ao sistema.",
-        });
-      }
-
       if (event === "USER_UPDATED") {
         toast({
           title: "Perfil atualizado!",
@@ -105,7 +98,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       return { error: null };
     } catch (error) {
-      console.error("Erro no cadastro:", error);
       toast({
         title: "Erro no cadastro",
         description: "Ocorreu um erro ao processar seu cadastro. Tente novamente.",
@@ -155,9 +147,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return { error: { message: "Email não confirmado" } };
       }
 
+      toast({
+        title: "Login realizado!",
+        description: "Bem-vindo ao sistema.",
+      });
+
       return { error: null };
     } catch (error) {
-      console.error("Erro no login:", error);
       toast({
         title: "Erro no login",
         description: "Ocorreu um erro ao fazer login. Tente novamente.",
@@ -177,7 +173,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         description: "Até logo!",
       });
     } catch (error) {
-      console.error("Erro no logout:", error);
       toast({
         title: "Erro no logout",
         description: "Ocorreu um erro ao fazer logout.",

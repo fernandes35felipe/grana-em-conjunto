@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { format, addMonths } from "date-fns";
+import { addMonths } from "date-fns";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 
 import { useToast } from "@/hooks/use-toast";
-import { useSanitizedForm } from "@/hooks/useSanitizedForm";
+import { useReminders } from "@/hooks/useReminders";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -27,7 +28,10 @@ import {
   ALLOWED_CATEGORIES,
 } from "@/utils/security";
 
+import { formatDateForInput, formatDateForDatabase, formatDateTimeForDatabase } from "@/utils/date/dateutils";
+
 import type { TransactionData } from "@/utils/security/types";
+import type { RepeatType } from "@/utils/types/reminder.types";
 
 interface AddTransactionDialogProps {
   type: "income" | "expense";
@@ -35,73 +39,74 @@ interface AddTransactionDialogProps {
   onSuccess?: () => void;
 }
 
-interface FormData extends Partial<TransactionData> {
-  assigned_to?: string;
+interface TransactionFormData {
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+  group_id: string;
+  is_recurring: boolean;
+  is_fixed: boolean;
+  recurrence_count: number;
+  assigned_to: string;
 }
 
-interface Group {
-  id: string;
-  name: string;
-}
-
-interface User {
-  id: string;
-  full_name: string;
+interface ReminderFormData {
+  enabled: boolean;
+  reminder_date: string;
+  repeat_type: RepeatType;
 }
 
 export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [groupUsers, setGroupUsers] = useState<User[]>([]);
   const { toast } = useToast();
+  const { createReminder } = useReminders();
 
-  const {
-    values: formData,
-    errors,
-    isSubmitting,
-    handleChange,
-    handleSubmit,
-    resetForm,
-  } = useSanitizedForm<FormData>({
-    initialValues: {
+  const [values, setValues] = useState<TransactionFormData>({
+    description: "",
+    amount: 0,
+    category: "",
+    date: formatDateForInput(new Date()),
+    group_id: "personal",
+    is_recurring: false,
+    is_fixed: false,
+    recurrence_count: 1,
+    assigned_to: "self",
+  });
+
+  const [reminderData, setReminderData] = useState<ReminderFormData>({
+    enabled: false,
+    reminder_date: "",
+    repeat_type: "none",
+  });
+
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetForm = () => {
+    setValues({
       description: "",
       amount: 0,
-      type,
       category: "",
-      date: format(new Date(), "yyyy-MM-dd"),
+      date: formatDateForInput(new Date()),
       group_id: "personal",
-      assigned_to: "self",
       is_recurring: false,
       is_fixed: false,
-      recurrence_count: null,
-    },
-    sanitizers: {
-      description: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH),
-      amount: (v) => sanitizeAmount(v),
-      category: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      date: (v) => sanitizeDate(v) || format(new Date(), "yyyy-MM-dd"),
-      group_id: (v) => (v === "personal" ? v : sanitizeUUID(v) || "personal"),
-      assigned_to: (v) => (v === "self" ? v : sanitizeUUID(v) || "self"),
-      recurrence_count: (v) => (v ? sanitizeInteger(v, SECURITY_LIMITS.MIN_RECURRENCE_COUNT, SECURITY_LIMITS.MAX_RECURRENCE_COUNT) : null),
-    },
-    validators: {
-      description: (v) => ({
-        isValid: v.length > 0 && v.length <= SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH,
-        error: v.length === 0 ? "Descrição obrigatória" : null,
-      }),
-      amount: (v) => ({
-        isValid: v > 0,
-        error: v <= 0 ? "Valor deve ser maior que zero" : null,
-      }),
-      category: (v) => ({
-        isValid: ALLOWED_CATEGORIES.includes(v as any),
-        error: !ALLOWED_CATEGORIES.includes(v as any) ? "Categoria inválida" : null,
-      }),
-    },
-    onSubmit: async (values) => {
-      await submitTransaction(values);
-    },
-  });
+      recurrence_count: 1,
+      assigned_to: "self",
+    });
+    setReminderData({
+      enabled: false,
+      reminder_date: "",
+      repeat_type: "none",
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | { target: { name: string; value: any } }) => {
+    const { name, value } = e.target;
+    setValues((prev) => ({ ...prev, [name]: value }));
+  };
 
   useEffect(() => {
     if (open) {
@@ -110,149 +115,131 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
   }, [open]);
 
   useEffect(() => {
-    if (formData.group_id && formData.group_id !== "personal") {
-      loadGroupUsers(formData.group_id);
+    if (values.group_id && values.group_id !== "personal") {
+      loadGroupMembers(values.group_id);
     } else {
-      setGroupUsers([]);
-      handleChange("assigned_to", "self");
+      setGroupMembers([]);
     }
-  }, [formData.group_id]);
-
-  useEffect(() => {
-    if (!formData.is_recurring) {
-      handleChange("recurrence_count", null);
-      handleChange("is_fixed", false);
-    }
-  }, [formData.is_recurring]);
+  }, [values.group_id]);
 
   const loadGroups = async () => {
     try {
       const userId = await ensureAuthenticated();
+      const { data, error } = await supabase
+        .from("groups")
+        .select("id, name")
+        .or(`created_by.eq.${userId},id.in.(select group_id from group_members where user_id = ${userId})`);
 
-      const { data: createdGroups, error: createdError } = await supabase.from("groups").select("id, name").eq("created_by", userId);
-
-      if (createdError) throw createdError;
-
-      const { data: memberGroups, error: memberError } = await supabase
-        .from("group_members")
-        .select("groups(id, name)")
-        .eq("user_id", userId);
-
-      if (memberError) throw memberError;
-
-      const memberGroupsData =
-        memberGroups?.map((mg: any) => ({
-          id: mg.groups.id,
-          name: mg.groups.name,
-        })) || [];
-
-      const allGroups = [...(createdGroups || []), ...memberGroupsData];
-      const uniqueGroups = allGroups.filter((group, index, self) => index === self.findIndex((g) => g.id === group.id));
-
-      setGroups(uniqueGroups.sort((a, b) => a.name.localeCompare(b.name)));
+      if (error) throw error;
+      setGroups(data || []);
     } catch (error) {
       console.error("Erro ao carregar grupos:", error);
     }
   };
 
-  const loadGroupUsers = async (groupId: string) => {
+  const loadGroupMembers = async (groupId: string) => {
     try {
-      const { data: membersData, error: membersError } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
+      const { data, error } = await supabase.from("group_members").select("user_id, profiles(id, full_name)").eq("group_id", groupId);
 
-      if (membersError) throw membersError;
+      if (error) throw error;
 
-      if (!membersData || membersData.length === 0) {
-        setGroupUsers([]);
-        return;
-      }
+      const members = data
+        ?.map((member: any) => ({
+          id: member.profiles?.id,
+          full_name: member.profiles?.full_name || "Sem nome",
+        }))
+        .filter((member) => member.id);
 
-      const userIds = membersData.map((m) => m.user_id);
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("user_id, full_name")
-        .in("user_id", userIds);
-
-      if (profilesError) throw profilesError;
-
-      const users =
-        profilesData?.map((profile) => ({
-          id: profile.user_id,
-          full_name: profile.full_name || "Usuário",
-        })) || [];
-
-      setGroupUsers(users);
+      setGroupMembers(members || []);
     } catch (error) {
-      console.error("Erro ao carregar usuários do grupo:", error);
-      setGroupUsers([]);
+      console.error("Erro ao carregar membros do grupo:", error);
     }
   };
 
-  const submitTransaction = async (values: FormData) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       const userId = await ensureAuthenticated();
+      const amount = sanitizeAmount(values.amount);
 
-      if (values.group_id && values.group_id !== "personal") {
-        const hasAccess = await checkGroupMembership(userId, values.group_id);
-        if (!hasAccess) {
-          throw new Error("Sem permissão para adicionar transações neste grupo");
-        }
+      if (amount <= 0) {
+        throw new Error("O valor deve ser maior que zero");
       }
 
-      const validationResult = validateTransactionData({
-        description: values.description!,
-        amount: values.amount!,
-        type: values.type!,
-        category: values.category!,
-        date: values.date!,
-        group_id: values.group_id === "personal" ? null : values.group_id,
-        is_recurring: values.is_recurring,
-        is_fixed: values.is_fixed,
-        recurrence_count: values.recurrence_count,
-      });
+      const sanitizedData: TransactionData = {
+        description: sanitizeInput(values.description),
+        amount,
+        category: sanitizeInput(values.category),
+        date: sanitizeDate(values.date),
+        group_id: values.group_id === "personal" ? null : sanitizeUUID(values.group_id),
+        is_recurring: Boolean(values.is_recurring),
+        is_fixed: Boolean(values.is_fixed),
+      };
 
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error || "Dados inválidos");
+      const validationErrors = validateTransactionData(sanitizedData);
+      if (validationErrors.length > 0) {
+        throw new Error(validationErrors.join(", "));
+      }
+
+      if (sanitizedData.group_id) {
+        const isMember = await checkGroupMembership(sanitizedData.group_id);
+        if (!isMember) {
+          throw new Error("Você não tem permissão para adicionar transações a este grupo");
+        }
       }
 
       await withRateLimit(
         `transaction:${userId}`,
         async () => {
-          const amount = values.amount!;
-
-          let recurrenceId = null;
-          let recurrenceCount = 1;
-
-          if (values.is_fixed) {
-            recurrenceId = crypto.randomUUID();
-            recurrenceCount = 60;
-          } else if (values.is_recurring && values.recurrence_count) {
-            recurrenceId = crypto.randomUUID();
-            recurrenceCount = values.recurrence_count;
-          }
-
+          const recurrenceId = values.is_recurring || values.is_fixed ? crypto.randomUUID() : null;
+          const recurrenceCount = sanitizeInteger(values.recurrence_count);
+          const iterations = values.is_fixed ? 12 : recurrenceCount;
           const transactionsToInsert = [];
 
-          for (let i = 0; i < recurrenceCount; i++) {
-            const transactionDate = addMonths(new Date(values.date!), i);
+          const baseDate = new Date(values.date + "T00:00:00");
+
+          for (let i = 0; i < iterations; i++) {
+            const transactionDate = addMonths(baseDate, i);
 
             transactionsToInsert.push({
               user_id: values.assigned_to === "self" || !values.assigned_to ? userId : values.assigned_to,
-              description: values.description,
+              description: sanitizedData.description,
               amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
               type,
-              category: values.category,
-              group_id: values.group_id === "personal" ? null : values.group_id,
-              date: format(transactionDate, "yyyy-MM-dd"),
-              is_recurring: values.is_recurring,
-              is_fixed: values.is_fixed,
+              category: sanitizedData.category,
+              group_id: sanitizedData.group_id,
+              date: formatDateForDatabase(transactionDate),
+              is_recurring: sanitizedData.is_recurring,
+              is_fixed: sanitizedData.is_fixed,
               recurrence_id: recurrenceId,
               recurrence_count: recurrenceCount,
             });
           }
 
-          const { error } = await supabase.from("transactions").insert(transactionsToInsert);
+          const { data: insertedTransactions, error } = await supabase.from("transactions").insert(transactionsToInsert).select();
 
           if (error) throw error;
+
+          if (reminderData.enabled && reminderData.reminder_date && insertedTransactions?.[0]) {
+            const reminderDateTime = formatDateTimeForDatabase(reminderData.reminder_date);
+
+            await createReminder(
+              {
+                title: `Lembrete: ${sanitizedData.description}`,
+                description: `${type === "income" ? "Receita" : "Despesa"} de ${amount.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}`,
+                reminder_date: reminderDateTime,
+                repeat_type: reminderData.repeat_type,
+              },
+              insertedTransactions[0].id
+            );
+          }
         },
         30
       );
@@ -264,6 +251,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         successMessage = `${type === "income" ? "Receita" : "Despesa"} recorrente adicionada com sucesso!`;
       } else {
         successMessage = `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`;
+      }
+
+      if (reminderData.enabled) {
+        successMessage += " Lembrete criado!";
       }
 
       toast({
@@ -281,51 +272,63 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         description: error instanceof Error ? error.message : "Erro ao criar transação",
         variant: "destructive",
       });
-      throw error;
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger || <Button>{type === "income" ? "Adicionar Receita" : "Adicionar Despesa"}</Button>}</DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Adicionar {type === "income" ? "Receita" : "Despesa"}</DialogTitle>
           <DialogDescription>Preencha os dados da {type === "income" ? "receita" : "despesa"}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="description">Descrição</Label>
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição *</Label>
             <Input
               id="description"
-              value={formData.description}
-              onChange={(e) => handleChange("description", e.target.value)}
-              maxLength={SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH}
-              placeholder="Ex: Salário, Aluguel..."
+              name="description"
+              value={values.description}
+              onChange={handleInputChange}
+              placeholder="Ex: Salário, Aluguel, Supermercado..."
+              required
             />
-            {errors.description && <p className="text-sm text-destructive mt-1">{errors.description}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="amount">Valor</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0"
-              max={SECURITY_LIMITS.MAX_AMOUNT}
-              value={formData.amount}
-              onChange={(e) => handleChange("amount", e.target.value)}
-              placeholder="0.00"
-            />
-            {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount}</p>}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor *</Label>
+              <Input
+                id="amount"
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={values.amount || ""}
+                onChange={handleInputChange}
+                placeholder="0,00"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date">Data *</Label>
+              <Input id="date" name="date" type="date" value={values.date} onChange={handleInputChange} required />
+            </div>
           </div>
 
-          <div>
-            <Label htmlFor="category">Categoria</Label>
-            <Select value={formData.category} onValueChange={(value) => handleChange("category", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="category">Categoria *</Label>
+            <Select
+              name="category"
+              value={values.category}
+              onValueChange={(value) => handleInputChange({ target: { name: "category", value } } as any)}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Selecione a categoria" />
               </SelectTrigger>
               <SelectContent>
                 {ALLOWED_CATEGORIES.map((cat) => (
@@ -335,17 +338,15 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 ))}
               </SelectContent>
             </Select>
-            {errors.category && <p className="text-sm text-destructive mt-1">{errors.category}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="date">Data</Label>
-            <Input id="date" type="date" value={formData.date} onChange={(e) => handleChange("date", e.target.value)} />
-          </div>
-
-          <div>
-            <Label htmlFor="group">Grupo</Label>
-            <Select value={formData.group_id} onValueChange={(value) => handleChange("group_id", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="group_id">Grupo</Label>
+            <Select
+              name="group_id"
+              value={values.group_id}
+              onValueChange={(value) => handleInputChange({ target: { name: "group_id", value } } as any)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -360,18 +361,22 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </Select>
           </div>
 
-          {formData.group_id !== "personal" && groupUsers.length > 0 && (
-            <div>
+          {values.group_id !== "personal" && groupMembers.length > 0 && (
+            <div className="space-y-2">
               <Label htmlFor="assigned_to">Atribuir a</Label>
-              <Select value={formData.assigned_to} onValueChange={(value) => handleChange("assigned_to", value)}>
+              <Select
+                name="assigned_to"
+                value={values.assigned_to}
+                onValueChange={(value) => handleInputChange({ target: { name: "assigned_to", value } } as any)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="self">Eu mesmo</SelectItem>
-                  {groupUsers.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.full_name}
+                  {groupMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -379,39 +384,100 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </div>
           )}
 
+          <Separator />
+
           <div className="flex items-center justify-between">
-            <Label htmlFor="is_recurring">Lançamento Recorrente</Label>
+            <div className="space-y-0.5">
+              <Label htmlFor="is_recurring">Transação Recorrente</Label>
+              <p className="text-sm text-muted-foreground">Repetir por um número específico de vezes</p>
+            </div>
             <Switch
               id="is_recurring"
-              checked={formData.is_recurring}
-              onCheckedChange={(checked) => handleChange("is_recurring", checked)}
+              name="is_recurring"
+              checked={values.is_recurring}
+              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
             />
           </div>
 
-          {formData.is_recurring && (
-            <>
-              <div>
-                <Label htmlFor="recurrence_count">Quantidade de Meses</Label>
-                <Input
-                  id="recurrence_count"
-                  type="number"
-                  min={SECURITY_LIMITS.MIN_RECURRENCE_COUNT}
-                  max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
-                  value={formData.recurrence_count || ""}
-                  onChange={(e) => handleChange("recurrence_count", e.target.value)}
-                  placeholder="Ex: 12"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="is_fixed">Lançamento Fixo (60 meses)</Label>
-                <Switch id="is_fixed" checked={formData.is_fixed} onCheckedChange={(checked) => handleChange("is_fixed", checked)} />
-              </div>
-            </>
+          {values.is_recurring && (
+            <div className="space-y-2">
+              <Label htmlFor="recurrence_count">Número de Repetições</Label>
+              <Input
+                id="recurrence_count"
+                name="recurrence_count"
+                type="number"
+                min="1"
+                max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
+                value={values.recurrence_count}
+                onChange={handleInputChange}
+              />
+            </div>
           )}
 
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="is_fixed">Lançamento Fixo</Label>
+              <p className="text-sm text-muted-foreground">Repetir mensalmente por 12 meses</p>
+            </div>
+            <Switch
+              id="is_fixed"
+              name="is_fixed"
+              checked={values.is_fixed}
+              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="reminder_enabled">Adicionar Lembrete</Label>
+                <p className="text-sm text-muted-foreground">Receber notificação sobre esta transação</p>
+              </div>
+              <Switch
+                id="reminder_enabled"
+                checked={reminderData.enabled}
+                onCheckedChange={(checked) => setReminderData((prev) => ({ ...prev, enabled: checked }))}
+              />
+            </div>
+
+            {reminderData.enabled && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="reminder_date">Data e Hora do Lembrete</Label>
+                  <Input
+                    id="reminder_date"
+                    type="datetime-local"
+                    value={reminderData.reminder_date}
+                    onChange={(e) => setReminderData((prev) => ({ ...prev, reminder_date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reminder_repeat">Repetir Lembrete</Label>
+                  <Select
+                    value={reminderData.repeat_type}
+                    onValueChange={(value) => setReminderData((prev) => ({ ...prev, repeat_type: value as RepeatType }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não repetir</SelectItem>
+                      <SelectItem value="daily">Diariamente</SelectItem>
+                      <SelectItem value="weekly">Semanalmente</SelectItem>
+                      <SelectItem value="monthly">Mensalmente</SelectItem>
+                      <SelectItem value="yearly">Anualmente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)} disabled={isSubmitting}>
               Cancelar
             </Button>
             <Button type="submit" className="flex-1" disabled={isSubmitting}>

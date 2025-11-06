@@ -1,22 +1,22 @@
 # Code Merge Output
-Generated at: 2025-11-05T21:01:59.847Z
+Generated at: 2025-11-06T17:42:10.117Z
 Source path: .
-Files processed: 107
-Total lines: 12522
-Total characters: 439336
+Files processed: 117
+Total lines: 13896
+Total characters: 483294
 
 File types:
-  - tsx: 78 files (10.234 lines)
-  - ts: 20 files (1.962 lines)
-  - json: 5 files (197 lines)
-  - js: 2 files (34 lines)
+  - tsx: 81 files (10.677 lines)
+  - ts: 26 files (2.790 lines)
+  - json: 5 files (198 lines)
+  - js: 3 files (136 lines)
   - md: 2 files (95 lines)
 
 Project structure & file index:
 ./
   - components.json (20 lines)
   - eslint.config.js (27 lines)
-  - package.json (93 lines)
+  - package.json (94 lines)
   - postcss.config.js (7 lines)
   - README.md (74 lines)
   - RECURRENCE_FEATURE.md (21 lines)
@@ -25,8 +25,10 @@ Project structure & file index:
   - tsconfig.json (30 lines)
   - tsconfig.node.json (23 lines)
   - vite.config.ts (68 lines)
+  public/
+    - sw.js (102 lines)
   src/
-    - App.tsx (82 lines)
+    - App.tsx (91 lines)
     - main.tsx (13 lines)
     - vite-env.d.ts (2 lines)
     components/
@@ -41,8 +43,9 @@ Project structure & file index:
       dialogs/
         - AddGoalDialog.tsx (235 lines)
         - AddGroupDialog.tsx (219 lines)
-        - AddInvestmentDialog.tsx (328 lines)
-        - AddTransactionDialog.tsx (426 lines)
+        - AddInvestmentDialog.tsx (326 lines)
+        - AddReminderDialog.tsx (140 lines)
+        - AddTransactionDialog.tsx (492 lines)
         - EditGoalDialog.tsx (241 lines)
         - EditGroupDialog.tsx (429 lines)
         - InvestmentAdjustmentDialog.tsx (209 lines)
@@ -54,7 +57,9 @@ Project structure & file index:
         - GroupDetailsModal.tsx (308 lines)
       layout/
         - DashboardLayout.tsx (43 lines)
-        - Sidebar.tsx (76 lines)
+        - Sidebar.tsx (78 lines)
+      reminders/
+        - RemindersList.tsx (239 lines)
       transactions/
         - types.ts (25 lines)
       ui/
@@ -110,36 +115,48 @@ Project structure & file index:
     constants/
       - investment-types.ts (15 lines)
     contexts/
-      - AuthContext.tsx (200 lines)
+      - AuthContext.tsx (195 lines)
     hooks/
       - use-mobile.tsx (20 lines)
       - use-toast.ts (192 lines)
+      - useReminders.ts (208 lines)
       - useSanitizedForm.ts (169 lines)
     integrations/
       supabase/
         - client.ts (14 lines)
         - types.ts (366 lines)
+        functions/
+          check-reminders/
+            - index.ts (131 lines)
     lib/
       - date.ts (17 lines)
-      - icons.ts (44 lines)
+      - icons.ts (45 lines)
       - utils.ts (7 lines)
     pages/
       - Auth.tsx (245 lines)
       - Dashboard.tsx (162 lines)
       - Groups.tsx (358 lines)
       - Index.tsx (120 lines)
-      - Investments.tsx (744 lines)
+      - Investments.tsx (718 lines)
       - NotFound.tsx (28 lines)
+      - Reminders.tsx (20 lines)
       - Transactions.tsx (425 lines)
     utils/
+      date/
+        - dateutils.ts (70 lines)
       security/
         - constants.ts (70 lines)
         - index.ts (9 lines)
         - permissions.ts (195 lines)
         - rateLimiter.ts (147 lines)
-        - sanitize.ts (181 lines)
+        - sanitize.ts (184 lines)
         - types.ts (61 lines)
         - validate.ts (248 lines)
+      services/
+        - pushNotificationService.ts (225 lines)
+        - reminderService.ts (138 lines)
+      types/
+        - reminder.types.ts (52 lines)
 ================================================================================
 
 STARTOFFILE: components.json
@@ -287,6 +304,7 @@ STARTOFFILE: package.json
     "globals": "^15.15.0",
     "lovable-tagger": "^1.1.9",
     "postcss": "^8.5.6",
+    "supabase": "^2.54.11",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
@@ -308,6 +326,113 @@ export default {
 
 ----------------------------------------
 ENDOFFILE: postcss.config.js
+
+STARTOFFILE: public\sw.js
+----------------------------------------
+self.addEventListener("push", (event) => {
+  if (!event.data) {
+    return;
+  }
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch (error) {
+    data = {
+      title: event.data.text(),
+      body: "",
+    };
+  }
+
+  const title = data.title || "FinanceAgent";
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192x192.png",
+    badge: "/icons/badge-96x96.png",
+    tag: data.tag || "notification",
+    requireInteraction: data.requireInteraction !== false,
+    actions: data.actions || [
+      {
+        action: "view",
+        title: "Ver",
+      },
+      {
+        action: "dismiss",
+        title: "Dispensar",
+      },
+    ],
+    data: {
+      url: data.url || "/",
+      ...data.data,
+    },
+  };
+  if (data.vibrate) {
+    options.vibrate = data.vibrate;
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const action = event.action;
+  const data = event.notification.data;
+
+  if (action === "dismiss") {
+    return;
+  }
+
+  const urlToOpen = action === "view" && data.url ? data.url : "/";
+
+  event.waitUntil(
+    clients
+      .matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === urlToOpen && "focus" in client) {
+            return client.focus();
+          }
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(urlToOpen);
+        }
+      })
+  );
+});
+
+self.addEventListener("notificationclose", (event) => {
+  console.log("Notification closed:", event.notification.tag);
+});
+
+// REMOVA O OUVINTE "message" QUE ADICIONAMOS ANTES
+/*
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "show-notification") {
+    const { title, options } = event.data;
+    
+    event.waitUntil(
+      self.registration.showNotification(title, options)
+    );
+  }
+});
+*/
+
+self.addEventListener("install", (event) => {
+  console.log("Service Worker installing...");
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  console.log("Service Worker activating...");
+  event.waitUntil(clients.claim());
+});
+
+----------------------------------------
+ENDOFFILE: public\sw.js
 
 STARTOFFILE: README.md
 ----------------------------------------
@@ -434,6 +559,7 @@ const Transactions = lazy(() => import("./pages/Transactions"));
 const Investments = lazy(() => import("./pages/Investments"));
 const Groups = lazy(() => import("./pages/Groups"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Reminder = lazy(() => import("./pages/Reminders"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -485,6 +611,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Groups />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reminders"
+              element={
+                <ProtectedRoute>
+                  <Reminder />
                 </ProtectedRoute>
               }
             />
@@ -1512,30 +1646,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PiggyBank } from "lucide-react";
+
 import { INVESTMENT_TYPES } from "@/constants/investment-types";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
 interface Group {
   id: string;
   name: string;
 }
 
-// Interface para as metas (necessária para as props)
 interface InvestmentGoal {
   id: string;
   name: string;
+  target_amount: number;
+  current_amount: number;
 }
 
 interface AddInvestmentDialogProps {
   trigger?: React.ReactNode;
-  onSuccess?: (investment: { goal_id: string | null }) => void; // Modificado para passar o goal_id
-  goals: InvestmentGoal[]; // Adicionada prop para receber as metas
+  onSuccess?: () => void;
 }
 
-export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestmentDialogProps) => {
+export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoal[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     type: "",
@@ -1544,17 +1681,20 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
     quantity: "",
     unit_price: "",
     group_id: "none",
-    goal_id: "none", // Adicionado
+    goal_id: "none",
     maturity_date: "",
   });
   const { toast } = useToast();
 
   const showQuantityPriceFields = formData.type === "Ações" || formData.type === "FIIs";
+
   useEffect(() => {
     if (open) {
       loadGroups();
+      loadInvestmentGoals();
     }
   }, [open]);
+
   const loadGroups = async () => {
     try {
       const { data, error } = await supabase.from("groups").select("id, name").order("name");
@@ -1565,9 +1705,20 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
     }
   };
 
+  const loadInvestmentGoals = async () => {
+    try {
+      const { data, error } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
+      if (error) throw error;
+      setInvestmentGoals(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar metas:", error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       const {
         data: { user },
@@ -1614,19 +1765,18 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
         quantity,
         unit_price: unitPrice,
         group_id: formData.group_id === "none" ? null : formData.group_id,
-        goal_id: formData.goal_id === "none" ? null : formData.goal_id, // Adicionado
+        goal_id: formData.goal_id === "none" ? null : formData.goal_id,
         maturity_date: formData.maturity_date || null,
       };
+
       const { error: insertError } = await supabase.from("investments").insert(investmentData);
 
       if (insertError) throw insertError;
+
       toast({
         title: "Sucesso",
         description: "Investimento adicionado com sucesso!",
       });
-
-      // Chama o onSuccess passando o goal_id para o pai recalcular
-      onSuccess?.({ goal_id: investmentData.goal_id });
 
       setFormData({
         name: "",
@@ -1636,10 +1786,11 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
         quantity: "",
         unit_price: "",
         group_id: "none",
-        goal_id: "none", // Resetado
+        goal_id: "none",
         maturity_date: "",
       });
       setOpen(false);
+      onSuccess?.();
     } catch (error) {
       console.error("Erro ao salvar investimento:", error);
       toast({
@@ -1651,12 +1802,14 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
       setLoading(false);
     }
   };
+
   const defaultTrigger = (
     <Button variant="outline" className="h-20 flex flex-col gap-2">
       <PiggyBank className="h-6 w-6" />
       <span className="text-sm">Investir</span>
     </Button>
   );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
@@ -1707,12 +1860,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
                     step="1"
                     placeholder="0"
                     value={formData.quantity}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        quantity: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1723,12 +1871,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
                     step="0.01"
                     placeholder="0,00"
                     value={formData.unit_price}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        unit_price: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setFormData((prev) => ({ ...prev, unit_price: e.target.value }))}
                   />
                 </div>
               </div>
@@ -1760,12 +1903,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
               step="0.01"
               placeholder="0,00"
               value={formData.current_value}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  current_value: e.target.value,
-                }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, current_value: e.target.value }))}
             />
           </div>
 
@@ -1786,18 +1924,17 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
             </Select>
           </div>
 
-          {/* NOVO CAMPO DE METAS */}
           <div className="space-y-2">
-            <Label htmlFor="goal">Meta (opcional)</Label>
+            <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
             <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Nenhuma meta" />
+                <SelectValue placeholder="Selecione uma meta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhuma</SelectItem>
-                {goals.map((goal) => (
+                <SelectItem value="none">Nenhuma meta</SelectItem>
+                {investmentGoals.map((goal) => (
                   <SelectItem key={goal.id} value={goal.id}>
-                    {goal.name}
+                    {goal.name} ({((goal.current_amount / goal.target_amount) * 100).toFixed(1)}% completo)
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1810,12 +1947,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
               id="maturity_date"
               type="date"
               value={formData.maturity_date}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  maturity_date: e.target.value,
-                }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, maturity_date: e.target.value }))}
             />
           </div>
 
@@ -1836,10 +1968,155 @@ export const AddInvestmentDialog = ({ trigger, onSuccess, goals }: AddInvestment
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddInvestmentDialog.tsx
 
+STARTOFFILE: src\components\dialogs\AddReminderDialog.tsx
+----------------------------------------
+import { useState } from "react";
+import { Bell } from "lucide-react";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+import { useReminders } from "@/hooks/useReminders";
+
+import { formatDateTimeForDatabase } from "@/utils/date/dateutils";
+
+import type { ReminderFormData, RepeatType } from "@/utils/types/reminder.types";
+
+interface AddReminderDialogProps {
+  trigger?: React.ReactNode;
+  transactionId?: string;
+  defaultTitle?: string;
+  onSuccess?: () => void;
+}
+
+export const AddReminderDialog = ({ trigger, transactionId, defaultTitle, onSuccess }: AddReminderDialogProps) => {
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState<ReminderFormData>({
+    title: defaultTitle || "",
+    description: "",
+    reminder_date: "",
+    repeat_type: "none",
+  });
+
+  const { createReminder } = useReminders();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      const reminderDataToSave = {
+        ...formData,
+        reminder_date: formatDateTimeForDatabase(formData.reminder_date),
+      };
+
+      await createReminder(reminderDataToSave, transactionId);
+      setOpen(false);
+      setFormData({
+        title: "",
+        description: "",
+        reminder_date: "",
+        repeat_type: "none",
+      });
+      if (onSuccess) onSuccess();
+    } catch (error) {
+      console.error("Erro ao criar lembrete:", error);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {trigger || (
+          <Button variant="outline" size="sm">
+            <Bell className="h-4 w-4 mr-2" />
+            Adicionar Lembrete
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Adicionar Lembrete</DialogTitle>
+          <DialogDescription>Configure um lembrete para não esquecer compromissos financeiros</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">Título *</Label>
+            <Input
+              id="title"
+              value={formData.title}
+              onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Ex: Pagar conta de luz"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição</Label>
+            <Textarea
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Informações adicionais sobre o lembrete"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="reminder_date">Data e Hora do Lembrete *</Label>
+            <Input
+              id="reminder_date"
+              type="datetime-local"
+              value={formData.reminder_date}
+              onChange={(e) => setFormData((prev) => ({ ...prev, reminder_date: e.target.value }))}
+              required
+            />
+            <p className="text-xs text-muted-foreground">Você pode agendar lembretes para qualquer data e horário</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="repeat_type">Repetir</Label>
+            <Select
+              value={formData.repeat_type}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, repeat_type: value as RepeatType }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Não repetir</SelectItem>
+                <SelectItem value="daily">Diariamente</SelectItem>
+                <SelectItem value="weekly">Semanalmente</SelectItem>
+                <SelectItem value="monthly">Mensalmente</SelectItem>
+                <SelectItem value="yearly">Anualmente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1">
+              Criar Lembrete
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\dialogs\AddReminderDialog.tsx
+
 STARTOFFILE: src\components\dialogs\AddTransactionDialog.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { format, addMonths } from "date-fns";
+import { addMonths } from "date-fns";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -1847,9 +2124,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 
 import { useToast } from "@/hooks/use-toast";
-import { useSanitizedForm } from "@/hooks/useSanitizedForm";
+import { useReminders } from "@/hooks/useReminders";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -1867,7 +2145,10 @@ import {
   ALLOWED_CATEGORIES,
 } from "@/utils/security";
 
+import { formatDateForInput, formatDateForDatabase, formatDateTimeForDatabase } from "@/utils/date/dateutils";
+
 import type { TransactionData } from "@/utils/security/types";
+import type { RepeatType } from "@/utils/types/reminder.types";
 
 interface AddTransactionDialogProps {
   type: "income" | "expense";
@@ -1875,73 +2156,74 @@ interface AddTransactionDialogProps {
   onSuccess?: () => void;
 }
 
-interface FormData extends Partial<TransactionData> {
-  assigned_to?: string;
+interface TransactionFormData {
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+  group_id: string;
+  is_recurring: boolean;
+  is_fixed: boolean;
+  recurrence_count: number;
+  assigned_to: string;
 }
 
-interface Group {
-  id: string;
-  name: string;
-}
-
-interface User {
-  id: string;
-  full_name: string;
+interface ReminderFormData {
+  enabled: boolean;
+  reminder_date: string;
+  repeat_type: RepeatType;
 }
 
 export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [groupUsers, setGroupUsers] = useState<User[]>([]);
   const { toast } = useToast();
+  const { createReminder } = useReminders();
 
-  const {
-    values: formData,
-    errors,
-    isSubmitting,
-    handleChange,
-    handleSubmit,
-    resetForm,
-  } = useSanitizedForm<FormData>({
-    initialValues: {
+  const [values, setValues] = useState<TransactionFormData>({
+    description: "",
+    amount: 0,
+    category: "",
+    date: formatDateForInput(new Date()),
+    group_id: "personal",
+    is_recurring: false,
+    is_fixed: false,
+    recurrence_count: 1,
+    assigned_to: "self",
+  });
+
+  const [reminderData, setReminderData] = useState<ReminderFormData>({
+    enabled: false,
+    reminder_date: "",
+    repeat_type: "none",
+  });
+
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetForm = () => {
+    setValues({
       description: "",
       amount: 0,
-      type,
       category: "",
-      date: format(new Date(), "yyyy-MM-dd"),
+      date: formatDateForInput(new Date()),
       group_id: "personal",
-      assigned_to: "self",
       is_recurring: false,
       is_fixed: false,
-      recurrence_count: null,
-    },
-    sanitizers: {
-      description: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH),
-      amount: (v) => sanitizeAmount(v),
-      category: (v) => sanitizeInput(v, SECURITY_LIMITS.MAX_NAME_LENGTH),
-      date: (v) => sanitizeDate(v) || format(new Date(), "yyyy-MM-dd"),
-      group_id: (v) => (v === "personal" ? v : sanitizeUUID(v) || "personal"),
-      assigned_to: (v) => (v === "self" ? v : sanitizeUUID(v) || "self"),
-      recurrence_count: (v) => (v ? sanitizeInteger(v, SECURITY_LIMITS.MIN_RECURRENCE_COUNT, SECURITY_LIMITS.MAX_RECURRENCE_COUNT) : null),
-    },
-    validators: {
-      description: (v) => ({
-        isValid: v.length > 0 && v.length <= SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH,
-        error: v.length === 0 ? "Descrição obrigatória" : null,
-      }),
-      amount: (v) => ({
-        isValid: v > 0,
-        error: v <= 0 ? "Valor deve ser maior que zero" : null,
-      }),
-      category: (v) => ({
-        isValid: ALLOWED_CATEGORIES.includes(v as any),
-        error: !ALLOWED_CATEGORIES.includes(v as any) ? "Categoria inválida" : null,
-      }),
-    },
-    onSubmit: async (values) => {
-      await submitTransaction(values);
-    },
-  });
+      recurrence_count: 1,
+      assigned_to: "self",
+    });
+    setReminderData({
+      enabled: false,
+      reminder_date: "",
+      repeat_type: "none",
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement> | { target: { name: string; value: any } }) => {
+    const { name, value } = e.target;
+    setValues((prev) => ({ ...prev, [name]: value }));
+  };
 
   useEffect(() => {
     if (open) {
@@ -1950,149 +2232,131 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
   }, [open]);
 
   useEffect(() => {
-    if (formData.group_id && formData.group_id !== "personal") {
-      loadGroupUsers(formData.group_id);
+    if (values.group_id && values.group_id !== "personal") {
+      loadGroupMembers(values.group_id);
     } else {
-      setGroupUsers([]);
-      handleChange("assigned_to", "self");
+      setGroupMembers([]);
     }
-  }, [formData.group_id]);
-
-  useEffect(() => {
-    if (!formData.is_recurring) {
-      handleChange("recurrence_count", null);
-      handleChange("is_fixed", false);
-    }
-  }, [formData.is_recurring]);
+  }, [values.group_id]);
 
   const loadGroups = async () => {
     try {
       const userId = await ensureAuthenticated();
+      const { data, error } = await supabase
+        .from("groups")
+        .select("id, name")
+        .or(`created_by.eq.${userId},id.in.(select group_id from group_members where user_id = ${userId})`);
 
-      const { data: createdGroups, error: createdError } = await supabase.from("groups").select("id, name").eq("created_by", userId);
-
-      if (createdError) throw createdError;
-
-      const { data: memberGroups, error: memberError } = await supabase
-        .from("group_members")
-        .select("groups(id, name)")
-        .eq("user_id", userId);
-
-      if (memberError) throw memberError;
-
-      const memberGroupsData =
-        memberGroups?.map((mg: any) => ({
-          id: mg.groups.id,
-          name: mg.groups.name,
-        })) || [];
-
-      const allGroups = [...(createdGroups || []), ...memberGroupsData];
-      const uniqueGroups = allGroups.filter((group, index, self) => index === self.findIndex((g) => g.id === group.id));
-
-      setGroups(uniqueGroups.sort((a, b) => a.name.localeCompare(b.name)));
+      if (error) throw error;
+      setGroups(data || []);
     } catch (error) {
       console.error("Erro ao carregar grupos:", error);
     }
   };
 
-  const loadGroupUsers = async (groupId: string) => {
+  const loadGroupMembers = async (groupId: string) => {
     try {
-      const { data: membersData, error: membersError } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
+      const { data, error } = await supabase.from("group_members").select("user_id, profiles(id, full_name)").eq("group_id", groupId);
 
-      if (membersError) throw membersError;
+      if (error) throw error;
 
-      if (!membersData || membersData.length === 0) {
-        setGroupUsers([]);
-        return;
-      }
+      const members = data
+        ?.map((member: any) => ({
+          id: member.profiles?.id,
+          full_name: member.profiles?.full_name || "Sem nome",
+        }))
+        .filter((member) => member.id);
 
-      const userIds = membersData.map((m) => m.user_id);
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("user_id, full_name")
-        .in("user_id", userIds);
-
-      if (profilesError) throw profilesError;
-
-      const users =
-        profilesData?.map((profile) => ({
-          id: profile.user_id,
-          full_name: profile.full_name || "Usuário",
-        })) || [];
-
-      setGroupUsers(users);
+      setGroupMembers(members || []);
     } catch (error) {
-      console.error("Erro ao carregar usuários do grupo:", error);
-      setGroupUsers([]);
+      console.error("Erro ao carregar membros do grupo:", error);
     }
   };
 
-  const submitTransaction = async (values: FormData) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       const userId = await ensureAuthenticated();
+      const amount = sanitizeAmount(values.amount);
 
-      if (values.group_id && values.group_id !== "personal") {
-        const hasAccess = await checkGroupMembership(userId, values.group_id);
-        if (!hasAccess) {
-          throw new Error("Sem permissão para adicionar transações neste grupo");
-        }
+      if (amount <= 0) {
+        throw new Error("O valor deve ser maior que zero");
       }
 
-      const validationResult = validateTransactionData({
-        description: values.description!,
-        amount: values.amount!,
-        type: values.type!,
-        category: values.category!,
-        date: values.date!,
-        group_id: values.group_id === "personal" ? null : values.group_id,
-        is_recurring: values.is_recurring,
-        is_fixed: values.is_fixed,
-        recurrence_count: values.recurrence_count,
-      });
+      const sanitizedData: TransactionData = {
+        description: sanitizeInput(values.description),
+        amount,
+        category: sanitizeInput(values.category),
+        date: sanitizeDate(values.date),
+        group_id: values.group_id === "personal" ? null : sanitizeUUID(values.group_id),
+        is_recurring: Boolean(values.is_recurring),
+        is_fixed: Boolean(values.is_fixed),
+      };
 
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error || "Dados inválidos");
+      const validationErrors = validateTransactionData(sanitizedData);
+      if (validationErrors.length > 0) {
+        throw new Error(validationErrors.join(", "));
+      }
+
+      if (sanitizedData.group_id) {
+        const isMember = await checkGroupMembership(sanitizedData.group_id);
+        if (!isMember) {
+          throw new Error("Você não tem permissão para adicionar transações a este grupo");
+        }
       }
 
       await withRateLimit(
         `transaction:${userId}`,
         async () => {
-          const amount = values.amount!;
-
-          let recurrenceId = null;
-          let recurrenceCount = 1;
-
-          if (values.is_fixed) {
-            recurrenceId = crypto.randomUUID();
-            recurrenceCount = 60;
-          } else if (values.is_recurring && values.recurrence_count) {
-            recurrenceId = crypto.randomUUID();
-            recurrenceCount = values.recurrence_count;
-          }
-
+          const recurrenceId = values.is_recurring || values.is_fixed ? crypto.randomUUID() : null;
+          const recurrenceCount = sanitizeInteger(values.recurrence_count);
+          const iterations = values.is_fixed ? 12 : recurrenceCount;
           const transactionsToInsert = [];
 
-          for (let i = 0; i < recurrenceCount; i++) {
-            const transactionDate = addMonths(new Date(values.date!), i);
+          const baseDate = new Date(values.date + "T00:00:00");
+
+          for (let i = 0; i < iterations; i++) {
+            const transactionDate = addMonths(baseDate, i);
 
             transactionsToInsert.push({
               user_id: values.assigned_to === "self" || !values.assigned_to ? userId : values.assigned_to,
-              description: values.description,
+              description: sanitizedData.description,
               amount: type === "expense" ? -Math.abs(amount) : Math.abs(amount),
               type,
-              category: values.category,
-              group_id: values.group_id === "personal" ? null : values.group_id,
-              date: format(transactionDate, "yyyy-MM-dd"),
-              is_recurring: values.is_recurring,
-              is_fixed: values.is_fixed,
+              category: sanitizedData.category,
+              group_id: sanitizedData.group_id,
+              date: formatDateForDatabase(transactionDate),
+              is_recurring: sanitizedData.is_recurring,
+              is_fixed: sanitizedData.is_fixed,
               recurrence_id: recurrenceId,
               recurrence_count: recurrenceCount,
             });
           }
 
-          const { error } = await supabase.from("transactions").insert(transactionsToInsert);
+          const { data: insertedTransactions, error } = await supabase.from("transactions").insert(transactionsToInsert).select();
 
           if (error) throw error;
+
+          if (reminderData.enabled && reminderData.reminder_date && insertedTransactions?.[0]) {
+            const reminderDateTime = formatDateTimeForDatabase(reminderData.reminder_date);
+
+            await createReminder(
+              {
+                title: `Lembrete: ${sanitizedData.description}`,
+                description: `${type === "income" ? "Receita" : "Despesa"} de ${amount.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}`,
+                reminder_date: reminderDateTime,
+                repeat_type: reminderData.repeat_type,
+              },
+              insertedTransactions[0].id
+            );
+          }
         },
         30
       );
@@ -2104,6 +2368,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         successMessage = `${type === "income" ? "Receita" : "Despesa"} recorrente adicionada com sucesso!`;
       } else {
         successMessage = `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`;
+      }
+
+      if (reminderData.enabled) {
+        successMessage += " Lembrete criado!";
       }
 
       toast({
@@ -2121,51 +2389,63 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         description: error instanceof Error ? error.message : "Erro ao criar transação",
         variant: "destructive",
       });
-      throw error;
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger || <Button>{type === "income" ? "Adicionar Receita" : "Adicionar Despesa"}</Button>}</DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Adicionar {type === "income" ? "Receita" : "Despesa"}</DialogTitle>
           <DialogDescription>Preencha os dados da {type === "income" ? "receita" : "despesa"}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="description">Descrição</Label>
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição *</Label>
             <Input
               id="description"
-              value={formData.description}
-              onChange={(e) => handleChange("description", e.target.value)}
-              maxLength={SECURITY_LIMITS.MAX_DESCRIPTION_LENGTH}
-              placeholder="Ex: Salário, Aluguel..."
+              name="description"
+              value={values.description}
+              onChange={handleInputChange}
+              placeholder="Ex: Salário, Aluguel, Supermercado..."
+              required
             />
-            {errors.description && <p className="text-sm text-destructive mt-1">{errors.description}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="amount">Valor</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0"
-              max={SECURITY_LIMITS.MAX_AMOUNT}
-              value={formData.amount}
-              onChange={(e) => handleChange("amount", e.target.value)}
-              placeholder="0.00"
-            />
-            {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount}</p>}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor *</Label>
+              <Input
+                id="amount"
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={values.amount || ""}
+                onChange={handleInputChange}
+                placeholder="0,00"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date">Data *</Label>
+              <Input id="date" name="date" type="date" value={values.date} onChange={handleInputChange} required />
+            </div>
           </div>
 
-          <div>
-            <Label htmlFor="category">Categoria</Label>
-            <Select value={formData.category} onValueChange={(value) => handleChange("category", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="category">Categoria *</Label>
+            <Select
+              name="category"
+              value={values.category}
+              onValueChange={(value) => handleInputChange({ target: { name: "category", value } } as any)}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Selecione a categoria" />
               </SelectTrigger>
               <SelectContent>
                 {ALLOWED_CATEGORIES.map((cat) => (
@@ -2175,17 +2455,15 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
                 ))}
               </SelectContent>
             </Select>
-            {errors.category && <p className="text-sm text-destructive mt-1">{errors.category}</p>}
           </div>
 
-          <div>
-            <Label htmlFor="date">Data</Label>
-            <Input id="date" type="date" value={formData.date} onChange={(e) => handleChange("date", e.target.value)} />
-          </div>
-
-          <div>
-            <Label htmlFor="group">Grupo</Label>
-            <Select value={formData.group_id} onValueChange={(value) => handleChange("group_id", value)}>
+          <div className="space-y-2">
+            <Label htmlFor="group_id">Grupo</Label>
+            <Select
+              name="group_id"
+              value={values.group_id}
+              onValueChange={(value) => handleInputChange({ target: { name: "group_id", value } } as any)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -2200,18 +2478,22 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </Select>
           </div>
 
-          {formData.group_id !== "personal" && groupUsers.length > 0 && (
-            <div>
+          {values.group_id !== "personal" && groupMembers.length > 0 && (
+            <div className="space-y-2">
               <Label htmlFor="assigned_to">Atribuir a</Label>
-              <Select value={formData.assigned_to} onValueChange={(value) => handleChange("assigned_to", value)}>
+              <Select
+                name="assigned_to"
+                value={values.assigned_to}
+                onValueChange={(value) => handleInputChange({ target: { name: "assigned_to", value } } as any)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="self">Eu mesmo</SelectItem>
-                  {groupUsers.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.full_name}
+                  {groupMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2219,39 +2501,100 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </div>
           )}
 
+          <Separator />
+
           <div className="flex items-center justify-between">
-            <Label htmlFor="is_recurring">Lançamento Recorrente</Label>
+            <div className="space-y-0.5">
+              <Label htmlFor="is_recurring">Transação Recorrente</Label>
+              <p className="text-sm text-muted-foreground">Repetir por um número específico de vezes</p>
+            </div>
             <Switch
               id="is_recurring"
-              checked={formData.is_recurring}
-              onCheckedChange={(checked) => handleChange("is_recurring", checked)}
+              name="is_recurring"
+              checked={values.is_recurring}
+              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
             />
           </div>
 
-          {formData.is_recurring && (
-            <>
-              <div>
-                <Label htmlFor="recurrence_count">Quantidade de Meses</Label>
-                <Input
-                  id="recurrence_count"
-                  type="number"
-                  min={SECURITY_LIMITS.MIN_RECURRENCE_COUNT}
-                  max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
-                  value={formData.recurrence_count || ""}
-                  onChange={(e) => handleChange("recurrence_count", e.target.value)}
-                  placeholder="Ex: 12"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="is_fixed">Lançamento Fixo (60 meses)</Label>
-                <Switch id="is_fixed" checked={formData.is_fixed} onCheckedChange={(checked) => handleChange("is_fixed", checked)} />
-              </div>
-            </>
+          {values.is_recurring && (
+            <div className="space-y-2">
+              <Label htmlFor="recurrence_count">Número de Repetições</Label>
+              <Input
+                id="recurrence_count"
+                name="recurrence_count"
+                type="number"
+                min="1"
+                max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
+                value={values.recurrence_count}
+                onChange={handleInputChange}
+              />
+            </div>
           )}
 
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="is_fixed">Lançamento Fixo</Label>
+              <p className="text-sm text-muted-foreground">Repetir mensalmente por 12 meses</p>
+            </div>
+            <Switch
+              id="is_fixed"
+              name="is_fixed"
+              checked={values.is_fixed}
+              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="reminder_enabled">Adicionar Lembrete</Label>
+                <p className="text-sm text-muted-foreground">Receber notificação sobre esta transação</p>
+              </div>
+              <Switch
+                id="reminder_enabled"
+                checked={reminderData.enabled}
+                onCheckedChange={(checked) => setReminderData((prev) => ({ ...prev, enabled: checked }))}
+              />
+            </div>
+
+            {reminderData.enabled && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="reminder_date">Data e Hora do Lembrete</Label>
+                  <Input
+                    id="reminder_date"
+                    type="datetime-local"
+                    value={reminderData.reminder_date}
+                    onChange={(e) => setReminderData((prev) => ({ ...prev, reminder_date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reminder_repeat">Repetir Lembrete</Label>
+                  <Select
+                    value={reminderData.repeat_type}
+                    onValueChange={(value) => setReminderData((prev) => ({ ...prev, repeat_type: value as RepeatType }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não repetir</SelectItem>
+                      <SelectItem value="daily">Diariamente</SelectItem>
+                      <SelectItem value="weekly">Semanalmente</SelectItem>
+                      <SelectItem value="monthly">Mensalmente</SelectItem>
+                      <SelectItem value="yearly">Anualmente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)} disabled={isSubmitting}>
               Cancelar
             </Button>
             <Button type="submit" className="flex-1" disabled={isSubmitting}>
@@ -4070,10 +4413,11 @@ ENDOFFILE: src\components\layout\DashboardLayout.tsx
 STARTOFFILE: src\components\layout\Sidebar.tsx
 ----------------------------------------
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, TrendingUp, ArrowUpDown, Users, PlusCircle, LogOut, DollarSign } from "@/lib/icons";
+import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+
 import { useAuth } from "@/contexts/AuthContext";
 
 interface SidebarProps {
@@ -4085,6 +4429,7 @@ const navigation = [
   { name: "Transações", href: "/transactions", icon: ArrowUpDown },
   { name: "Investimentos", href: "/investments", icon: TrendingUp },
   { name: "Grupos", href: "/groups", icon: Users },
+  { name: "Lembretes", href: "/reminders", icon: Bell },
   { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
 ];
 
@@ -4118,7 +4463,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
       <nav className="flex-1 overflow-y-auto p-4 space-y-2">
         {navigation.map((item) => (
           <NavLink
-            key={item.name}
+            key={item.href}
             to={item.href}
             onClick={handleNavClick}
             className={({ isActive }) =>
@@ -4165,6 +4510,250 @@ export const LoadingFallback = () => {
 
 ----------------------------------------
 ENDOFFILE: src\components\LoadingFallback.tsx
+
+STARTOFFILE: src\components\reminders\RemindersList.tsx
+----------------------------------------
+import { useState } from "react";
+import { Bell, BellOff, Check, Trash2, Clock, RefreshCw } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import { useReminders } from "@/hooks/useReminders";
+import { AddReminderDialog } from "@/components/dialogs/AddReminderDialog";
+
+import { cn } from "@/lib/utils";
+
+import type { Reminder } from "@/utils/types/reminder";
+
+const REPEAT_TYPE_LABELS = {
+  none: "Não repete",
+  daily: "Diariamente",
+  weekly: "Semanalmente",
+  monthly: "Mensalmente",
+  yearly: "Anualmente",
+};
+
+export const RemindersList = () => {
+  const {
+    reminders,
+    loading,
+    isSubscribed,
+    notificationPermission,
+    completeReminder,
+    deleteReminder,
+    enableNotifications,
+    disableNotifications,
+  } = useReminders();
+
+  const [reminderToDelete, setReminderToDelete] = useState<Reminder | null>(null);
+
+  const handleComplete = async (id: string) => {
+    await completeReminder(id);
+  };
+
+  const handleDelete = async () => {
+    if (!reminderToDelete) return;
+    await deleteReminder(reminderToDelete.id);
+    setReminderToDelete(null);
+  };
+
+  const formatReminderDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return format(date, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+  };
+
+  const isOverdue = (dateString: string) => {
+    const reminderDate = new Date(dateString);
+    const now = new Date();
+    return reminderDate.getTime() < now.getTime();
+  };
+
+  const sortedReminders = [...reminders].sort((a, b) => {
+    if (a.is_completed !== b.is_completed) {
+      return a.is_completed ? 1 : -1;
+    }
+    return new Date(a.reminder_date).getTime() - new Date(b.reminder_date).getTime();
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Notificações Push</CardTitle>
+              <CardDescription>Receba lembretes mesmo quando não estiver usando o aplicativo</CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="notifications"
+                checked={isSubscribed}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    enableNotifications();
+                  } else {
+                    disableNotifications();
+                  }
+                }}
+                disabled={notificationPermission === "denied"}
+              />
+              <Label htmlFor="notifications" className="cursor-pointer">
+                {isSubscribed ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+              </Label>
+            </div>
+          </div>
+          {notificationPermission === "denied" && (
+            <p className="text-sm text-destructive mt-2">
+              As notificações foram bloqueadas. Altere as configurações do navegador para habilitar.
+            </p>
+          )}
+          {notificationPermission === "default" && !isSubscribed && (
+            <p className="text-sm text-muted-foreground mt-2">Ative as notificações para receber lembretes no desktop</p>
+          )}
+        </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Meus Lembretes</CardTitle>
+              <CardDescription>
+                {reminders.length === 0
+                  ? "Nenhum lembrete cadastrado"
+                  : `${reminders.filter((r) => !r.is_completed).length} lembretes ativos`}
+              </CardDescription>
+            </div>
+            <AddReminderDialog />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : sortedReminders.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Bell className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>Nenhum lembrete cadastrado</p>
+              <p className="text-sm mt-1">Adicione lembretes para não esquecer seus compromissos financeiros</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sortedReminders.map((reminder) => {
+                const overdueStatus = !reminder.is_completed && isOverdue(reminder.reminder_date);
+
+                return (
+                  <div
+                    key={reminder.id}
+                    className={cn(
+                      "flex items-start gap-3 p-4 rounded-lg border transition-colors",
+                      reminder.is_completed
+                        ? "bg-muted/50 opacity-60"
+                        : overdueStatus
+                        ? "bg-destructive/5 border-destructive/20"
+                        : "bg-card hover:bg-accent/5"
+                    )}
+                  >
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className={cn("font-medium", reminder.is_completed && "line-through text-muted-foreground")}>
+                          {reminder.title}
+                        </h4>
+                        <div className="flex items-center gap-1">
+                          {!reminder.is_completed && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-success hover:text-success hover:bg-success/10"
+                              onClick={() => handleComplete(reminder.id)}
+                              title="Marcar como concluído"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setReminderToDelete(reminder)}
+                            title="Excluir lembrete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      {reminder.description && <p className="text-sm text-muted-foreground">{reminder.description}</p>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant={reminder.is_completed ? "secondary" : overdueStatus ? "destructive" : "default"}
+                          className="text-xs"
+                        >
+                          <Clock className="h-3 w-3 mr-1" />
+                          {formatReminderDate(reminder.reminder_date)}
+                        </Badge>
+                        {reminder.repeat_type && reminder.repeat_type !== "none" && (
+                          <Badge variant="outline" className="text-xs">
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            {REPEAT_TYPE_LABELS[reminder.repeat_type]}
+                          </Badge>
+                        )}
+                        {reminder.is_completed && (
+                          <Badge variant="secondary" className="text-xs">
+                            Concluído
+                          </Badge>
+                        )}
+                        {overdueStatus && (
+                          <Badge variant="destructive" className="text-xs">
+                            Atrasado
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!reminderToDelete} onOpenChange={() => setReminderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover Lembrete</AlertDialogTitle>
+            <AlertDialogDescription>Tem certeza que deseja remover este lembrete? Esta ação não pode ser desfeita.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+----------------------------------------
+ENDOFFILE: src\components\reminders\RemindersList.tsx
 
 STARTOFFILE: src\components\transactions\types.ts
 ----------------------------------------
@@ -8777,13 +9366,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUser(session?.user ?? null);
       setLoading(false);
 
-      if (event === "SIGNED_IN") {
-        toast({
-          title: "Login realizado!",
-          description: "Bem-vindo ao sistema.",
-        });
-      }
-
       if (event === "USER_UPDATED") {
         toast({
           title: "Perfil atualizado!",
@@ -8841,7 +9423,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       return { error: null };
     } catch (error) {
-      console.error("Erro no cadastro:", error);
       toast({
         title: "Erro no cadastro",
         description: "Ocorreu um erro ao processar seu cadastro. Tente novamente.",
@@ -8891,9 +9472,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return { error: { message: "Email não confirmado" } };
       }
 
+      toast({
+        title: "Login realizado!",
+        description: "Bem-vindo ao sistema.",
+      });
+
       return { error: null };
     } catch (error) {
-      console.error("Erro no login:", error);
       toast({
         title: "Erro no login",
         description: "Ocorreu um erro ao fazer login. Tente novamente.",
@@ -8913,7 +9498,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         description: "Até logo!",
       });
     } catch (error) {
-      console.error("Erro no logout:", error);
       toast({
         title: "Erro no logout",
         description: "Ocorreu um erro ao fazer logout.",
@@ -9159,6 +9743,219 @@ export { useToast, toast }
 ----------------------------------------
 ENDOFFILE: src\hooks\use-toast.ts
 
+STARTOFFILE: src\hooks\useReminders.ts
+----------------------------------------
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+
+import { reminderService } from "@/utils/services/reminderService";
+import { pushNotificationService } from "@/utils/services/pushNotificationService";
+
+import type { Reminder, ReminderFormData } from "@/utils/types/reminder";
+
+export const useReminders = () => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
+
+  const loadReminders = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const data = await reminderService.getUserReminders(user.id);
+      setReminders(data);
+    } catch (error) {
+      console.error("Erro ao carregar lembretes:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os lembretes",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, toast]);
+
+  const checkNotificationStatus = useCallback(async () => {
+    const permission = await pushNotificationService.getPermissionState();
+    setNotificationPermission(permission);
+
+    const subscribed = await pushNotificationService.isSubscribed();
+    setIsSubscribed(subscribed);
+  }, []);
+
+  useEffect(() => {
+    loadReminders();
+    checkNotificationStatus();
+  }, [loadReminders, checkNotificationStatus]);
+
+  // REMOVA ESTE 'useEffect' COMPLETAMENTE.
+  // A verificação não será mais feita pelo cliente.
+  /*
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = setInterval(async () => {
+      await reminderService.checkPendingReminders(user.id);
+    }, 15000); 
+
+    return () => clearInterval(interval);
+  }, [user]);
+  */
+
+  const createReminder = async (data: ReminderFormData, transactionId?: string) => {
+    if (!user) {
+      toast({
+        title: "Erro",
+        description: "Usuário não autenticado",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await reminderService.createReminder(user.id, data, transactionId);
+      await loadReminders();
+      toast({
+        title: "Sucesso",
+        description: "Lembrete criado com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao criar lembrete:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível criar o lembrete",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const updateReminder = async (id: string, data: Partial<ReminderFormData>) => {
+    try {
+      await reminderService.updateReminder(id, data);
+      await loadReminders();
+
+      toast({
+        title: "Sucesso",
+        description: "Lembrete atualizado com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar lembrete:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar o lembrete",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const deleteReminder = async (id: string) => {
+    try {
+      await reminderService.deleteReminder(id);
+      await loadReminders();
+
+      toast({
+        title: "Sucesso",
+        description: "Lembrete removido com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao remover lembrete:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível remover o lembrete",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const completeReminder = async (id: string) => {
+    try {
+      await reminderService.markAsCompleted(id);
+      await loadReminders();
+
+      toast({
+        title: "Sucesso",
+        description: "Lembrete marcado como concluído",
+      });
+    } catch (error) {
+      console.error("Erro ao completar lembrete:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível marcar o lembrete como concluído",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const enableNotifications = async () => {
+    if (!user) return;
+    try {
+      await pushNotificationService.initialize();
+      await pushNotificationService.subscribe(user.id);
+
+      setIsSubscribed(true);
+      setNotificationPermission("granted");
+      toast({
+        title: "Sucesso",
+        description: "Notificações ativadas com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao ativar notificações:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível ativar as notificações",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const disableNotifications = async () => {
+    if (!user) return;
+    try {
+      await pushNotificationService.unsubscribe(user.id);
+
+      setIsSubscribed(false);
+      toast({
+        title: "Sucesso",
+        description: "Notificações desativadas com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao desativar notificações:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível desativar as notificações",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return {
+    reminders,
+    loading,
+    isSubscribed,
+    notificationPermission,
+    createReminder,
+    updateReminder,
+    deleteReminder,
+    completeReminder,
+    enableNotifications,
+    disableNotifications,
+    refreshReminders: loadReminders,
+  };
+};
+
+----------------------------------------
+ENDOFFILE: src\hooks\useReminders.ts
+
 STARTOFFILE: src\hooks\useSanitizedForm.ts
 ----------------------------------------
 import { useState, useCallback } from 'react';
@@ -9351,6 +10148,142 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
 
 ----------------------------------------
 ENDOFFILE: src\integrations\supabase\client.ts
+
+STARTOFFILE: src\integrations\supabase\functions\check-reminders\index.ts
+----------------------------------------
+import { createClient } from "https";
+import * as webpush from "web-push";
+
+// Tipos básicos (melhor seria compartilhar com o 'types.ts' do seu app, mas isto funciona)
+interface Reminder {
+  id: string;
+  user_id: string;
+  title: string;
+  description?: string;
+  reminder_date: string;
+}
+interface Subscription {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+// Configurar o web-push com suas chaves VAPID
+// IMPORTANTE: Use as mesmas chaves do seu .env (VITE_VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY)
+// Você deve adicionar VAPID_PRIVATE_KEY nas 'secrets' do seu projeto Supabase
+// supabase secrets set VAPID_PUBLIC_KEY=SUA_CHAVE_PUBLICA
+// supabase secrets set VAPID_PRIVATE_KEY=SUA_CHAVE_PRIVADA
+webpush.setVapidDetails(
+  "mailto:seu-email@dominio.com", // Adicione seu email
+  Deno.env.get("VAPID_PUBLIC_KEY")!,
+  Deno.env.get("VAPID_PRIVATE_KEY")!
+);
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  // Tratar requisição OPTIONS (CORS)
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! // Use a Service Role Key para rodar no servidor
+    );
+
+    const now = new Date().toISOString();
+
+    // 1. Buscar lembretes pendentes
+    const { data: reminders, error: remindersError } = await supabaseClient
+      .from("reminders")
+      .select("*")
+      .eq("is_completed", false)
+      .eq("is_notified", false)
+      .lte("reminder_date", now);
+
+    if (remindersError) throw remindersError;
+    if (!reminders || reminders.length === 0) {
+      return new Response(JSON.stringify({ message: "Nenhum lembrete pendente." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    const notificationsToSend: Promise<any>[] = [];
+    const notifiedReminderIds: string[] = [];
+
+    // 2. Para cada lembrete, buscar as inscrições (assinaturas) do usuário
+    for (const reminder of reminders) {
+      const { data: subscriptions, error: subsError } = await supabaseClient
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", reminder.user_id)
+        .eq("is_active", true);
+
+      if (subsError || !subscriptions) continue;
+
+      for (const sub of subscriptions) {
+        const pushSubscription = {
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: sub.p256dh,
+            auth: sub.auth,
+          },
+        };
+
+        const payload = JSON.stringify({
+          title: reminder.title,
+          body: reminder.description || "Você tem um novo lembrete.",
+          tag: `reminder-${reminder.id}`,
+          data: {
+            url: "/reminders", // Para onde o usuário vai ao clicar
+          },
+        });
+
+        // 3. Adicionar o envio da notificação à fila
+        notificationsToSend.push(
+          webpush.sendNotification(pushSubscription, payload).catch(async (err) => {
+            console.error(`Erro ao enviar notificação para ${sub.endpoint}: ${err.message}`);
+            // Se a inscrição expirou (410 Gone), desativa ela no banco
+            if (err.statusCode === 410) {
+              await supabaseClient.from("push_subscriptions").update({ is_active: false }).eq("endpoint", sub.endpoint);
+            }
+          })
+        );
+      }
+      notifiedReminderIds.push(reminder.id);
+    }
+
+    // 4. Enviar todas as notificações
+    await Promise.all(notificationsToSend);
+
+    // 5. Marcar lembretes como notificados
+    if (notifiedReminderIds.length > 0) {
+      await supabaseClient
+        .from("reminders")
+        .update({ is_notified: true, notification_sent_at: new Date().toISOString() })
+        .in("id", notifiedReminderIds);
+    }
+
+    return new Response(JSON.stringify({ message: `${notificationsToSend.length} notificações enviadas.` }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+    });
+  }
+});
+
+----------------------------------------
+ENDOFFILE: src\integrations\supabase\functions\check-reminders\index.ts
 
 STARTOFFILE: src\integrations\supabase\types.ts
 ----------------------------------------
@@ -9789,6 +10722,7 @@ export {
   PieChart,
   UserPlus,
   UserMinus,
+  Bell,
 } from "lucide-react";
 
 ----------------------------------------
@@ -10813,14 +11747,17 @@ const Investments = () => {
   const { toast } = useToast();
 
   const GOALS_PER_PAGE = 3;
+
   useEffect(() => {
     loadData();
   }, []);
+
   const loadData = async () => {
     setLoading(true);
     await Promise.all([loadInvestments(), loadGoals()]);
     setLoading(false);
   };
+
   const loadInvestments = async () => {
     try {
       const { data, error } = await supabase
@@ -10847,6 +11784,7 @@ const Investments = () => {
         .select("*")
         .order("priority", { ascending: true })
         .order("created_at", { ascending: false });
+
       if (error) throw error;
       setGoals(data || []);
     } catch (error) {
@@ -10857,37 +11795,6 @@ const Investments = () => {
         variant: "destructive",
       });
     }
-  };
-
-  /**
-   * CORREÇÃO: Esta função agora soma 'current_value' em vez de 'amount'
-   * para refletir o valor atualizado dos investimentos na meta.
-   */
-  const recalculateGoalAmount = async (goalId: string) => {
-    try {
-      const { data: investments, error: investmentsError } = await supabase
-        .from("investments")
-        .select("current_value") // Corrigido de "amount" para "current_value"
-        .eq("goal_id", goalId);
-      if (investmentsError) throw investmentsError;
-
-      const totalAmount = investments?.reduce((sum, inv) => sum + inv.current_value, 0) || 0; // Corrigido de inv.amount
-      const { error: updateError } = await supabase.from("investment_goals").update({ current_amount: totalAmount }).eq("id", goalId);
-
-      if (updateError) throw updateError;
-
-      await loadGoals();
-    } catch (error) {
-      console.error("Erro ao recalcular valor da meta:", error);
-    }
-  };
-
-  // NOVA FUNÇÃO: Handler para o onSuccess do AddInvestmentDialog
-  const handleAddInvestmentSuccess = async (addedInvestment: { goal_id: string | null }) => {
-    if (addedInvestment.goal_id) {
-      await recalculateGoalAmount(addedInvestment.goal_id);
-    }
-    await loadInvestments(); // Recarrega a lista de investimentos
   };
 
   const aggregatedInvestments = useMemo(() => {
@@ -10937,20 +11844,17 @@ const Investments = () => {
 
   const handleDeleteConfirm = async () => {
     if (!investmentToDelete) return;
+
     try {
-      const investmentToRemove = allInvestments.find((inv) => inv.id === investmentToDelete);
-      const goalId = investmentToRemove?.goal_id;
       const { error } = await supabase.from("investments").delete().eq("id", investmentToDelete);
       if (error) throw error;
-      if (goalId) {
-        await recalculateGoalAmount(goalId);
-      }
 
       toast({
         title: "Sucesso",
         description: "Registro de investimento removido com sucesso!",
       });
-      await loadInvestments();
+
+      await loadData();
     } catch (error) {
       console.error("Erro ao remover investimento:", error);
       toast({
@@ -10963,15 +11867,18 @@ const Investments = () => {
       setInvestmentToDelete(null);
     }
   };
+
   const handleDeleteGoalClick = (goalId: string) => {
     setGoalToDelete(goalId);
     setDeleteGoalDialogOpen(true);
   };
+
   const handleDeleteGoalConfirm = async () => {
     if (!goalToDelete) return;
     try {
       const { error } = await supabase.from("investment_goals").delete().eq("id", goalToDelete);
       if (error) throw error;
+
       toast({
         title: "Sucesso",
         description: "Meta removida com sucesso!",
@@ -10990,31 +11897,30 @@ const Investments = () => {
       setGoalToDelete(null);
     }
   };
+
   const handleEditGoalClick = (goal: InvestmentGoal) => {
     setGoalToEdit(goal);
     setEditGoalDialogOpen(true);
   };
+
   const handleEditGoalClose = () => {
     setEditGoalDialogOpen(false);
     setGoalToEdit(null);
   };
+
   const handleAdjustmentClick = (investment: AggregatedInvestment) => {
     setAdjustmentTarget(investment);
   };
-  const handleAdjustmentSuccess = async () => {
-    const uniqueGoalIds = [...new Set(adjustmentTarget?.goalIds.filter((id) => id !== null))];
-    for (const goalId of uniqueGoalIds) {
-      if (goalId) {
-        await recalculateGoalAmount(goalId);
-      }
-    }
 
-    await loadInvestments();
+  const handleAdjustmentSuccess = async () => {
+    await loadData();
     setAdjustmentTarget(null);
   };
+
   const totalInvested = allInvestments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrentValue = allInvestments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
+
   const investmentTypes = [...new Set(aggregatedInvestments.map((inv) => inv.type))];
 
   const getTypeData = (type: string) => {
@@ -11031,14 +11937,18 @@ const Investments = () => {
 
   const paginatedAggregatedInvestments = aggregatedInvestments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPages = Math.ceil(aggregatedInvestments.length / itemsPerPage);
+
   const paginatedGoals = goals.slice(goalPage * GOALS_PER_PAGE, (goalPage + 1) * GOALS_PER_PAGE);
   const totalGoalPages = Math.ceil(goals.length / GOALS_PER_PAGE);
+
   const handlePreviousGoals = () => {
     if (goalPage > 0) setGoalPage(goalPage - 1);
   };
+
   const handleNextGoals = () => {
     if (goalPage < totalGoalPages - 1) setGoalPage(goalPage + 1);
   };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -11064,8 +11974,7 @@ const Investments = () => {
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
             <p className="text-muted-foreground">Acompanhe e gerencie seu portfólio</p>
           </div>
-          {/* MODIFICADO: Passando goals e usando o novo handler */}
-          <AddInvestmentDialog onSuccess={handleAddInvestmentSuccess} goals={goals} />
+          <AddInvestmentDialog onSuccess={loadData} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -11388,15 +12297,13 @@ const Investments = () => {
               <PieChart className="h-16 w-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
               <p className="text-muted-foreground mb-4 text-center">Comece a acompanhar seus investimentos agora</p>
-              {/* MODIFICADO: Passando goals e usando o novo handler */}
               <AddInvestmentDialog
                 trigger={
                   <Button>
                     <Plus className="h-4 w-4 mr-2" /> Adicionar Primeiro Investimento
                   </Button>
                 }
-                onSuccess={handleAddInvestmentSuccess}
-                goals={goals}
+                onSuccess={loadData}
               />
             </CardContent>
           </Card>
@@ -11407,6 +12314,7 @@ const Investments = () => {
           onOpenChange={setModalOpen}
           type={selectedType}
           investments={selectedType ? allInvestments.filter((inv) => inv.type === selectedType) : []}
+          onInvestmentDeleted={loadData}
         />
 
         {adjustmentTarget && (
@@ -11433,8 +12341,8 @@ const Investments = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita e atualizará automaticamente
-                os valores das metas associadas.
+                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita. As metas associadas serão
+                atualizadas automaticamente.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -11510,6 +12418,31 @@ export default NotFound;
 
 ----------------------------------------
 ENDOFFILE: src\pages\NotFound.tsx
+
+STARTOFFILE: src\pages\Reminders.tsx
+----------------------------------------
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { RemindersList } from "@/components/reminders/RemindersList";
+
+const Reminders = () => {
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Lembretes</h1>
+          <p className="text-muted-foreground mt-2">Gerencie seus lembretes e notificações financeiras</p>
+        </div>
+
+        <RemindersList />
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default Reminders;
+
+----------------------------------------
+ENDOFFILE: src\pages\Reminders.tsx
 
 STARTOFFILE: src\pages\Transactions.tsx
 ----------------------------------------
@@ -11940,6 +12873,81 @@ export default Transactions;
 
 ----------------------------------------
 ENDOFFILE: src\pages\Transactions.tsx
+
+STARTOFFILE: src\utils\date\dateutils.ts
+----------------------------------------
+export const formatDateForInput = (date: Date | string): string => {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+export const formatDateTimeForInput = (date: Date | string): string => {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+export const parseDateFromInput = (dateString: string): Date => {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+};
+
+export const parseDateTimeFromInput = (dateTimeString: string): Date => {
+  const date = new Date(dateTimeString);
+  return date;
+};
+
+export const formatDateForDatabase = (date: Date | string): string => {
+  if (typeof date === "string") {
+    if (date.includes("T")) {
+      const d = new Date(date);
+      return formatDateForInput(d);
+    }
+    return date;
+  }
+  return formatDateForInput(date);
+};
+
+export const formatDateTimeForDatabase = (dateTimeString: string): string => {
+  if (!dateTimeString) return "";
+
+  const parts = dateTimeString.split("T");
+  if (parts.length !== 2) return dateTimeString;
+
+  const [datePart, timePart] = parts;
+  const [year, month, day] = datePart.split("-");
+  const [hours, minutes] = timePart.split(":");
+
+  const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hours), parseInt(minutes), 0, 0);
+
+  return localDate.toISOString();
+};
+
+export const compareDates = (date1: Date | string, date2: Date | string): number => {
+  const d1 = typeof date1 === "string" ? new Date(date1) : date1;
+  const d2 = typeof date2 === "string" ? new Date(date2) : date2;
+  return d1.getTime() - d2.getTime();
+};
+
+export const isDateInPast = (date: Date | string): boolean => {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.getTime() < new Date().getTime();
+};
+
+export const addMinutesToDate = (date: Date | string, minutes: number): Date => {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Date(d.getTime() + minutes * 60000);
+};
+
+----------------------------------------
+ENDOFFILE: src\utils\date\dateutils.ts
 
 STARTOFFILE: src\utils\security\constants.ts
 ----------------------------------------
@@ -12384,27 +13392,27 @@ ENDOFFILE: src\utils\security\rateLimiter.ts
 
 STARTOFFILE: src\utils\security\sanitize.ts
 ----------------------------------------
-import DOMPurify from 'dompurify';
+import DOMPurify from "dompurify";
 
-import { SECURITY_LIMITS, SQL_INJECTION_PATTERNS, XSS_PATTERNS } from './constants';
+import { SECURITY_LIMITS, SQL_INJECTION_PATTERNS, XSS_PATTERNS } from "./constants";
 
 export const sanitizeString = (input: string, maxLength: number = SECURITY_LIMITS.MAX_STRING_LENGTH): string => {
-  if (typeof input !== 'string') {
-    return '';
+  if (typeof input !== "string") {
+    return "";
   }
 
   let sanitized = input.trim();
-  
+
   sanitized = sanitized.slice(0, maxLength);
-  
-  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
-  
+
+  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
+
   return sanitized;
 };
 
 export const sanitizeHTML = (input: string): string => {
-  if (typeof input !== 'string') {
-    return '';
+  if (typeof input !== "string") {
+    return "";
   }
 
   return DOMPurify.sanitize(input, {
@@ -12415,8 +13423,8 @@ export const sanitizeHTML = (input: string): string => {
 };
 
 export const sanitizeNumber = (input: string | number): number => {
-  const parsed = typeof input === 'string' ? parseFloat(input) : input;
-  
+  const parsed = typeof input === "string" ? parseFloat(input) : input;
+
   if (isNaN(parsed) || !isFinite(parsed)) {
     return 0;
   }
@@ -12426,11 +13434,11 @@ export const sanitizeNumber = (input: string | number): number => {
 
 export const sanitizeAmount = (input: string | number): number => {
   const amount = sanitizeNumber(input);
-  
+
   if (amount > SECURITY_LIMITS.MAX_AMOUNT) {
     return SECURITY_LIMITS.MAX_AMOUNT;
   }
-  
+
   if (amount < SECURITY_LIMITS.MIN_AMOUNT) {
     return SECURITY_LIMITS.MIN_AMOUNT;
   }
@@ -12439,8 +13447,8 @@ export const sanitizeAmount = (input: string | number): number => {
 };
 
 export const sanitizeInteger = (input: string | number, min: number = 0, max: number = Number.MAX_SAFE_INTEGER): number => {
-  const parsed = typeof input === 'string' ? parseInt(input, 10) : Math.floor(input);
-  
+  const parsed = typeof input === "string" ? parseInt(input, 10) : Math.floor(input);
+
   if (isNaN(parsed) || !isFinite(parsed)) {
     return min;
   }
@@ -12457,28 +13465,25 @@ export const sanitizeInteger = (input: string | number, min: number = 0, max: nu
 };
 
 export const detectSQLInjection = (input: string): boolean => {
-  return SQL_INJECTION_PATTERNS.some(pattern => pattern.test(input));
+  return SQL_INJECTION_PATTERNS.some((pattern) => pattern.test(input));
 };
 
 export const detectXSS = (input: string): boolean => {
-  return XSS_PATTERNS.some(pattern => pattern.test(input));
+  return XSS_PATTERNS.some((pattern) => pattern.test(input));
 };
 
 export const sanitizeInput = (input: string, maxLength?: number): string => {
   const cleaned = sanitizeString(input, maxLength);
   const htmlSafe = sanitizeHTML(cleaned);
-  
+
   if (detectSQLInjection(htmlSafe) || detectXSS(htmlSafe)) {
-    return '';
+    return "";
   }
 
   return htmlSafe;
 };
 
-export const sanitizeObject = <T extends Record<string, any>>(
-  obj: T,
-  sanitizers: Partial<Record<keyof T, (value: any) => any>>
-): T => {
+export const sanitizeObject = <T extends Record<string, any>>(obj: T, sanitizers: Partial<Record<keyof T, (value: any) => any>>): T => {
   const sanitized = { ...obj };
 
   for (const key in sanitizers) {
@@ -12493,11 +13498,7 @@ export const sanitizeObject = <T extends Record<string, any>>(
   return sanitized;
 };
 
-export const sanitizeArray = <T>(
-  arr: T[],
-  itemSanitizer: (item: T) => T,
-  maxLength: number = 1000
-): T[] => {
+export const sanitizeArray = <T>(arr: T[], itemSanitizer: (item: T) => T, maxLength: number = 1000): T[] => {
   if (!Array.isArray(arr)) {
     return [];
   }
@@ -12507,28 +13508,43 @@ export const sanitizeArray = <T>(
 
 export const sanitizeUUID = (input: string): string | null => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  
-  if (typeof input === 'string' && uuidRegex.test(input.trim())) {
+
+  if (typeof input === "string" && uuidRegex.test(input.trim())) {
     return input.trim().toLowerCase();
   }
 
   return null;
 };
 
-export const sanitizeDate = (input: string | Date): string | null => {
+export const sanitizeDate = (input: string | Date | null): string | null => {
+  if (!input) return null;
+
   try {
-    const date = typeof input === 'string' ? new Date(input) : input;
-    
-    if (isNaN(date.getTime())) {
-      return null;
+    let dateStr: string;
+
+    if (typeof input === "string") {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+        return input;
+      }
+      dateStr = input;
+    } else {
+      const year = input.getFullYear();
+      const month = String(input.getMonth() + 1).padStart(2, "0");
+      const day = String(input.getDate()).padStart(2, "0");
+      dateStr = `${year}-${month}-${day}`;
     }
 
-    const year = date.getFullYear();
+    const [year, month, day] = dateStr.split("T")[0].split("-").map(Number);
+
     if (year < 1900 || year > 2100) {
       return null;
     }
 
-    return date.toISOString().split('T')[0];
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return null;
+    }
+
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   } catch {
     return null;
   }
@@ -12557,12 +13573,7 @@ export const sanitizeColor = (color: string): string | null => {
 };
 
 export const escapeRegExp = (string: string): string => {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
-
-export const sanitizeSearchTerm = (term: string): string => {
-  const cleaned = sanitizeString(term, 255);
-  return escapeRegExp(cleaned);
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
 ----------------------------------------
@@ -12886,6 +13897,436 @@ export const validateBatch = (results: ValidationResult[]): ValidationResult => 
 
 ----------------------------------------
 ENDOFFILE: src\utils\security\validate.ts
+
+STARTOFFILE: src\utils\services\pushNotificationService.ts
+----------------------------------------
+import { supabase } from "@/integrations/supabase/client";
+
+import type { PushSubscription } from "@/utils/types/reminder";
+
+const PUBLIC_VAPID_KEY =
+  import.meta.env.VITE_VAPID_PUBLIC_KEY || "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nqm5lM";
+
+export class PushNotificationService {
+  private static instance: PushNotificationService;
+  private registration: ServiceWorkerRegistration | null = null;
+
+  private constructor() {}
+
+  static getInstance(): PushNotificationService {
+    if (!PushNotificationService.instance) {
+      PushNotificationService.instance = new PushNotificationService();
+    }
+    return PushNotificationService.instance;
+  }
+
+  async initialize(): Promise<boolean> {
+    if (!("serviceWorker" in navigator)) {
+      console.warn("Service Workers não suportados neste navegador");
+      return false;
+    }
+
+    if (!("PushManager" in window)) {
+      console.warn("Push API não suportada neste navegador");
+      return false;
+    }
+
+    try {
+      this.registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      console.log("Service Worker registrado com sucesso");
+      return true;
+    } catch (error) {
+      console.error("Erro ao registrar Service Worker:", error);
+      return false;
+    }
+  }
+
+  async requestPermission(): Promise<NotificationPermission> {
+    if (!("Notification" in window)) {
+      throw new Error("Notificações não suportadas");
+    }
+
+    const permission = await Notification.requestPermission();
+    console.log("Permissão de notificação:", permission);
+    return permission;
+  }
+
+  async getPermissionState(): Promise<NotificationPermission> {
+    if (!("Notification" in window)) {
+      return "denied";
+    }
+    return Notification.permission;
+  }
+
+  async subscribe(userId: string): Promise<PushSubscription | null> {
+    if (!this.registration) {
+      const initialized = await this.initialize();
+      if (!initialized) {
+        throw new Error("Falha ao inicializar Service Worker");
+      }
+    }
+
+    if (!this.registration) {
+      throw new Error("Service Worker não registrado");
+    }
+
+    const permission = await this.requestPermission();
+    if (permission !== "granted") {
+      throw new Error("Permissão de notificação negada");
+    }
+
+    try {
+      const subscription = await this.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this.urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
+      });
+      const subscriptionData = {
+        user_id: userId,
+        endpoint: subscription.endpoint,
+        p256dh: this.arrayBufferToBase64(subscription.getKey("p256dh")),
+        auth: this.arrayBufferToBase64(subscription.getKey("auth")),
+        user_agent: navigator.userAgent,
+        is_active: true,
+      };
+      const { data, error } = await supabase
+        .from("push_subscriptions")
+        .upsert(subscriptionData, { onConflict: "endpoint" })
+        .select()
+        .single();
+      if (error) throw error;
+
+      console.log("Inscrição push criada com sucesso");
+
+      await this.showNotification("Notificações Ativadas!", {
+        body: "Você receberá lembretes mesmo quando não estiver usando o aplicativo.",
+        icon: "/icons/icon-192x192.png",
+        badge: "/icons/badge-96x96.png",
+      });
+      return data;
+    } catch (error) {
+      console.error("Erro ao criar inscrição push:", error);
+      throw error;
+    }
+  }
+
+  async unsubscribe(userId: string): Promise<void> {
+    if (!this.registration) {
+      return;
+    }
+
+    try {
+      const subscription = await this.registration.pushManager.getSubscription();
+      if (subscription) {
+        await subscription.unsubscribe();
+      }
+
+      await supabase.from("push_subscriptions").delete().eq("user_id", userId);
+
+      console.log("Inscrição push cancelada");
+    } catch (error) {
+      console.error("Erro ao cancelar inscrição push:", error);
+      throw error;
+    }
+  }
+
+  async isSubscribed(): Promise<boolean> {
+    if (!this.registration) {
+      await this.initialize();
+    }
+
+    if (!this.registration) {
+      return false;
+    }
+
+    const subscription = await this.registration.pushManager.getSubscription();
+    return subscription !== null;
+  }
+
+  // FUNÇÃO 'showNotification' MODIFICADA
+  async showNotification(title: string, options?: NotificationOptions): Promise<void> {
+    const permission = await this.getPermissionState();
+    if (permission !== "granted") {
+      console.warn("Permissão de notificação não concedida");
+      return;
+    }
+
+    if (!this.registration) {
+      console.warn("Service Worker registration not found. Initializing...");
+      await this.initialize();
+      if (!this.registration) {
+        console.error("Falha ao encontrar o registration do Service Worker. Usando fallback.");
+        try {
+          new Notification(title, {
+            icon: "/icons/icon-192x192.png",
+            badge: "/icons/badge-96x96.png",
+            ...options,
+          });
+          console.log("Notificação exibida (fallback):", title);
+        } catch (e) {
+          console.error("Erro ao exibir notificação de fallback:", e);
+        }
+        return;
+      }
+    }
+
+    // Envia uma mensagem para o Service Worker
+    try {
+      this.registration.active?.postMessage({
+        type: "show-notification",
+        title: title,
+        options: {
+          badge: "/icons/badge-96x96.png",
+          icon: "/icons/icon-192x192.png",
+          vibrate: [200, 100, 200],
+          requireInteraction: false,
+          ...options,
+        },
+      });
+      console.log("Mensagem de notificação enviada ao Service Worker:", title);
+    } catch (error) {
+      console.error("Erro ao enviar mensagem para o Service Worker:", error);
+      // Fallback se o postMessage falhar
+      try {
+        new Notification(title, {
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/badge-96x96.png",
+          ...options,
+        });
+        console.log("Notificação exibida (fallback 2):", title);
+      } catch (e) {
+        console.error("Erro ao exibir notificação de fallback 2:", e);
+      }
+    }
+  }
+
+  private urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer | null): string {
+    if (!buffer) return "";
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  }
+}
+
+export const pushNotificationService = PushNotificationService.getInstance();
+
+----------------------------------------
+ENDOFFILE: src\utils\services\pushNotificationService.ts
+
+STARTOFFILE: src\utils\services\reminderService.ts
+----------------------------------------
+import { supabase } from "@/integrations/supabase/client";
+import { pushNotificationService } from "@/utils/services/pushNotificationService";
+
+import type { Reminder, ReminderFormData } from "@/utils/types/reminder";
+
+export class ReminderService {
+  async createReminder(userId: string, data: ReminderFormData, transactionId?: string): Promise<Reminder> {
+    const { data: reminder, error } = await supabase
+      .from("reminders")
+      .insert({
+        user_id: userId,
+        transaction_id: transactionId,
+        title: data.title,
+        description: data.description,
+        reminder_date: data.reminder_date,
+        repeat_type: data.repeat_type,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return reminder;
+  }
+
+  async updateReminder(id: string, data: Partial<ReminderFormData>): Promise<Reminder> {
+    const { data: reminder, error } = await supabase
+      .from("reminders")
+      .update({
+        ...data,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return reminder;
+  }
+
+  async deleteReminder(id: string): Promise<void> {
+    const { error } = await supabase.from("reminders").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  async getUserReminders(userId: string, includeCompleted = false): Promise<Reminder[]> {
+    let query = supabase.from("reminders").select("*").eq("user_id", userId).order("reminder_date", { ascending: true });
+    if (!includeCompleted) {
+      query = query.eq("is_completed", false);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    return data || [];
+  }
+
+  async getUpcomingReminders(userId: string, hours = 24): Promise<Reminder[]> {
+    const now = new Date();
+    const future = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    const { data, error } = await supabase
+      .from("reminders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_completed", false)
+      .gte("reminder_date", now.toISOString())
+      .lte("reminder_date", future.toISOString())
+      .order("reminder_date", { ascending: true });
+
+    if (error) throw error;
+
+    return data || [];
+  }
+
+  async markAsCompleted(id: string): Promise<void> {
+    const { error } = await supabase
+      .from("reminders")
+      .update({
+        is_completed: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  }
+
+  async markAsNotified(id: string): Promise<void> {
+    const { error } = await supabase
+      .from("reminders")
+      .update({
+        is_notified: true,
+        notification_sent_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  }
+
+  // A função 'sendNotification' não é mais necessária no cliente
+  // A função 'scheduleReminder' não é mais necessária no cliente
+
+  private async createRecurringReminder(reminder: Reminder): Promise<void> {
+    const currentDate = new Date(reminder.reminder_date);
+    let nextDate: Date;
+
+    switch (reminder.repeat_type) {
+      case "daily":
+        nextDate = new Date(currentDate.setDate(currentDate.getDate() + 1));
+        break;
+      case "weekly":
+        nextDate = new Date(currentDate.setDate(currentDate.getDate() + 7));
+        break;
+      case "monthly":
+        nextDate = new Date(currentDate.setMonth(currentDate.getMonth() + 1));
+        break;
+      case "yearly":
+        nextDate = new Date(currentDate.setFullYear(currentDate.getFullYear() + 1));
+        break;
+      default:
+        return;
+    }
+
+    await this.createReminder(
+      reminder.user_id,
+      {
+        title: reminder.title,
+        description: reminder.description,
+        reminder_date: nextDate.toISOString(),
+        repeat_type: reminder.repeat_type,
+      },
+      reminder.transaction_id
+    );
+  }
+}
+
+export const reminderService = new ReminderService();
+
+----------------------------------------
+ENDOFFILE: src\utils\services\reminderService.ts
+
+STARTOFFILE: src\utils\types\reminder.types.ts
+----------------------------------------
+export type RepeatType = "none" | "daily" | "weekly" | "monthly" | "yearly";
+
+export interface Reminder {
+  id: string;
+  user_id: string;
+  transaction_id?: string;
+  title: string;
+  description?: string;
+  reminder_date: string;
+  is_completed: boolean;
+  is_notified: boolean;
+  notification_sent_at?: string;
+  repeat_type?: RepeatType;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReminderFormData {
+  title: string;
+  description?: string;
+  reminder_date: string;
+  repeat_type: RepeatType;
+}
+
+export interface PushSubscription {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationPermissionState {
+  granted: boolean;
+  denied: boolean;
+  default: boolean;
+}
+
+export interface InAppNotification {
+  id: string;
+  title: string;
+  description?: string;
+  type: "reminder" | "transaction" | "goal" | "system";
+  timestamp: string;
+  isRead: boolean;
+  actionUrl?: string;
+}
+
+----------------------------------------
+ENDOFFILE: src\utils\types\reminder.types.ts
 
 STARTOFFILE: src\vite-env.d.ts
 ----------------------------------------

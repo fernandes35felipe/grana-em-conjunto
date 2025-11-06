@@ -80,14 +80,17 @@ const Investments = () => {
   const { toast } = useToast();
 
   const GOALS_PER_PAGE = 3;
+
   useEffect(() => {
     loadData();
   }, []);
+
   const loadData = async () => {
     setLoading(true);
     await Promise.all([loadInvestments(), loadGoals()]);
     setLoading(false);
   };
+
   const loadInvestments = async () => {
     try {
       const { data, error } = await supabase
@@ -114,6 +117,7 @@ const Investments = () => {
         .select("*")
         .order("priority", { ascending: true })
         .order("created_at", { ascending: false });
+
       if (error) throw error;
       setGoals(data || []);
     } catch (error) {
@@ -124,37 +128,6 @@ const Investments = () => {
         variant: "destructive",
       });
     }
-  };
-
-  /**
-   * CORREÇÃO: Esta função agora soma 'current_value' em vez de 'amount'
-   * para refletir o valor atualizado dos investimentos na meta.
-   */
-  const recalculateGoalAmount = async (goalId: string) => {
-    try {
-      const { data: investments, error: investmentsError } = await supabase
-        .from("investments")
-        .select("current_value") // Corrigido de "amount" para "current_value"
-        .eq("goal_id", goalId);
-      if (investmentsError) throw investmentsError;
-
-      const totalAmount = investments?.reduce((sum, inv) => sum + inv.current_value, 0) || 0; // Corrigido de inv.amount
-      const { error: updateError } = await supabase.from("investment_goals").update({ current_amount: totalAmount }).eq("id", goalId);
-
-      if (updateError) throw updateError;
-
-      await loadGoals();
-    } catch (error) {
-      console.error("Erro ao recalcular valor da meta:", error);
-    }
-  };
-
-  // NOVA FUNÇÃO: Handler para o onSuccess do AddInvestmentDialog
-  const handleAddInvestmentSuccess = async (addedInvestment: { goal_id: string | null }) => {
-    if (addedInvestment.goal_id) {
-      await recalculateGoalAmount(addedInvestment.goal_id);
-    }
-    await loadInvestments(); // Recarrega a lista de investimentos
   };
 
   const aggregatedInvestments = useMemo(() => {
@@ -204,20 +177,17 @@ const Investments = () => {
 
   const handleDeleteConfirm = async () => {
     if (!investmentToDelete) return;
+
     try {
-      const investmentToRemove = allInvestments.find((inv) => inv.id === investmentToDelete);
-      const goalId = investmentToRemove?.goal_id;
       const { error } = await supabase.from("investments").delete().eq("id", investmentToDelete);
       if (error) throw error;
-      if (goalId) {
-        await recalculateGoalAmount(goalId);
-      }
 
       toast({
         title: "Sucesso",
         description: "Registro de investimento removido com sucesso!",
       });
-      await loadInvestments();
+
+      await loadData();
     } catch (error) {
       console.error("Erro ao remover investimento:", error);
       toast({
@@ -230,15 +200,18 @@ const Investments = () => {
       setInvestmentToDelete(null);
     }
   };
+
   const handleDeleteGoalClick = (goalId: string) => {
     setGoalToDelete(goalId);
     setDeleteGoalDialogOpen(true);
   };
+
   const handleDeleteGoalConfirm = async () => {
     if (!goalToDelete) return;
     try {
       const { error } = await supabase.from("investment_goals").delete().eq("id", goalToDelete);
       if (error) throw error;
+
       toast({
         title: "Sucesso",
         description: "Meta removida com sucesso!",
@@ -257,31 +230,30 @@ const Investments = () => {
       setGoalToDelete(null);
     }
   };
+
   const handleEditGoalClick = (goal: InvestmentGoal) => {
     setGoalToEdit(goal);
     setEditGoalDialogOpen(true);
   };
+
   const handleEditGoalClose = () => {
     setEditGoalDialogOpen(false);
     setGoalToEdit(null);
   };
+
   const handleAdjustmentClick = (investment: AggregatedInvestment) => {
     setAdjustmentTarget(investment);
   };
-  const handleAdjustmentSuccess = async () => {
-    const uniqueGoalIds = [...new Set(adjustmentTarget?.goalIds.filter((id) => id !== null))];
-    for (const goalId of uniqueGoalIds) {
-      if (goalId) {
-        await recalculateGoalAmount(goalId);
-      }
-    }
 
-    await loadInvestments();
+  const handleAdjustmentSuccess = async () => {
+    await loadData();
     setAdjustmentTarget(null);
   };
+
   const totalInvested = allInvestments.reduce((sum, inv) => sum + inv.amount, 0);
   const totalCurrentValue = allInvestments.reduce((sum, inv) => sum + inv.current_value, 0);
   const totalReturn = totalInvested > 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0;
+
   const investmentTypes = [...new Set(aggregatedInvestments.map((inv) => inv.type))];
 
   const getTypeData = (type: string) => {
@@ -298,14 +270,18 @@ const Investments = () => {
 
   const paginatedAggregatedInvestments = aggregatedInvestments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPages = Math.ceil(aggregatedInvestments.length / itemsPerPage);
+
   const paginatedGoals = goals.slice(goalPage * GOALS_PER_PAGE, (goalPage + 1) * GOALS_PER_PAGE);
   const totalGoalPages = Math.ceil(goals.length / GOALS_PER_PAGE);
+
   const handlePreviousGoals = () => {
     if (goalPage > 0) setGoalPage(goalPage - 1);
   };
+
   const handleNextGoals = () => {
     if (goalPage < totalGoalPages - 1) setGoalPage(goalPage + 1);
   };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -331,8 +307,7 @@ const Investments = () => {
             <h1 className="text-3xl font-bold text-foreground">Investimentos</h1>
             <p className="text-muted-foreground">Acompanhe e gerencie seu portfólio</p>
           </div>
-          {/* MODIFICADO: Passando goals e usando o novo handler */}
-          <AddInvestmentDialog onSuccess={handleAddInvestmentSuccess} goals={goals} />
+          <AddInvestmentDialog onSuccess={loadData} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -655,15 +630,13 @@ const Investments = () => {
               <PieChart className="h-16 w-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Nenhum investimento cadastrado</h3>
               <p className="text-muted-foreground mb-4 text-center">Comece a acompanhar seus investimentos agora</p>
-              {/* MODIFICADO: Passando goals e usando o novo handler */}
               <AddInvestmentDialog
                 trigger={
                   <Button>
                     <Plus className="h-4 w-4 mr-2" /> Adicionar Primeiro Investimento
                   </Button>
                 }
-                onSuccess={handleAddInvestmentSuccess}
-                goals={goals}
+                onSuccess={loadData}
               />
             </CardContent>
           </Card>
@@ -674,6 +647,7 @@ const Investments = () => {
           onOpenChange={setModalOpen}
           type={selectedType}
           investments={selectedType ? allInvestments.filter((inv) => inv.type === selectedType) : []}
+          onInvestmentDeleted={loadData}
         />
 
         {adjustmentTarget && (
@@ -700,8 +674,8 @@ const Investments = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita e atualizará automaticamente
-                os valores das metas associadas.
+                Tem certeza que deseja remover este registro de investimento? Esta ação não pode ser desfeita. As metas associadas serão
+                atualizadas automaticamente.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

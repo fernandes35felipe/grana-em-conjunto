@@ -1,8 +1,9 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, TrendingUp, ArrowUpDown, Users, PlusCircle, LogOut, DollarSign } from "@/lib/icons";
+import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+
 import { useAuth } from "@/contexts/AuthContext";
 
 interface SidebarProps {
@@ -14,6 +15,7 @@ const navigation = [
   { name: "Transações", href: "/transactions", icon: ArrowUpDown },
   { name: "Investimentos", href: "/investments", icon: TrendingUp },
   { name: "Grupos", href: "/groups", icon: Users },
+  { name: "Lembretes", href: "/reminders", icon: Bell },
   { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
 ];
 
@@ -47,7 +49,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
       <nav className="flex-1 overflow-y-auto p-4 space-y-2">
         {navigation.map((item) => (
           <NavLink
-            key={item.name}
+            key={item.href}
             to={item.href}
             onClick={handleNavClick}
             className={({ isActive }) =>

@@ -16,6 +16,7 @@ const Transactions = lazy(() => import("./pages/Transactions"));
 const Investments = lazy(() => import("./pages/Investments"));
 const Groups = lazy(() => import("./pages/Groups"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Reminder = lazy(() => import("./pages/Reminders"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +68,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Groups />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reminders"
+              element={
+                <ProtectedRoute>
+                  <Reminder />
                 </ProtectedRoute>
               }
             />

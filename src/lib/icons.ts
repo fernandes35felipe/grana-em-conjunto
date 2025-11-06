@@ -40,4 +40,5 @@ export {
   PieChart,
   UserPlus,
   UserMinus,
+  Bell,
 } from "lucide-react";
