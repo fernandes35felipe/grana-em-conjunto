@@ -1,9 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 
-import type { PushSubscription } from "@/utils/types/reminder";
+import type { PushSubscription } from "@/utils/types/reminder.types";
 
 const PUBLIC_VAPID_KEY =
-  import.meta.env.VITE_VAPID_PUBLIC_KEY || "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nqm5lM";
+  import.meta.env.VITE_VAPID_PUBLIC_KEY || "BETwmgmXXkeAecI8eHXj-kCKkj_0c-qDX3znwN4oCgQUn2QAblyPI3E1Sc3xLgurcNnz12-K8AuUYyTyQLIFXT4";
 
 export class PushNotificationService {
   private static instance: PushNotificationService;
@@ -88,7 +88,7 @@ export class PushNotificationService {
         is_active: true,
       };
       const { data, error } = await supabase
-        .from("push_subscriptions")
+        .from("push_subscriptions" as any)
         .upsert(subscriptionData, { onConflict: "endpoint" })
         .select()
         .single();
@@ -198,7 +198,7 @@ export class PushNotificationService {
     }
   }
 
-  private urlBase64ToUint8Array(base64String: string): Uint8Array {
+  private urlBase64ToUint8Array(base64String: string): ArrayBuffer {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
 
@@ -207,7 +207,8 @@ export class PushNotificationService {
     for (let i = 0; i < rawData.length; ++i) {
       outputArray[i] = rawData.charCodeAt(i);
     }
-    return outputArray;
+    // ensure we return a plain ArrayBuffer (BufferSource) compatible with PushManager
+    return outputArray.buffer.slice(0);
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer | null): string {
