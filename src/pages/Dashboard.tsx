@@ -95,21 +95,21 @@ const Dashboard = () => {
                 title="Saldo Total"
                 value={metrics.totalBalance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<DollarSign className="h-5 w-5 text-primary" />}
-                change="+12.5% em relação ao mês anterior"
+                // change="+12.5% em relação ao mês anterior"
                 changeType="positive"
               />
               <MetricCard
                 title="Receitas"
                 value={metrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingUp className="h-5 w-5 text-success" />}
-                change={`+${metrics.incomeChange}% este mês`}
+                // change={`+${metrics.incomeChange}% este mês`}
                 changeType="positive"
               />
               <MetricCard
                 title="Despesas"
                 value={metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingDown className="h-5 w-5 text-destructive" />}
-                change={`${metrics.expenseChange}% este mês`}
+                // change={`${metrics.expenseChange}% este mês`}
                 changeType="positive"
               />
 
@@ -117,7 +117,7 @@ const Dashboard = () => {
                 title="Investimentos"
                 value={metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<PiggyBank className="h-5 w-5 text-accent" />}
-                change={`+${metrics.investmentChange}% este ano`}
+                // change={`+${metrics.investmentChange}% este ano`}
                 changeType="positive"
               />
             </>

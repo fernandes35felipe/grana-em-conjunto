@@ -30,3 +30,7 @@ dist-ssr
 *.sln
 *.sw?
 vite_react_shadcn_ts-merged.txt
+
+# Temporary files
+*.tmp
+merged-output.txt

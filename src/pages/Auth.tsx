@@ -141,6 +141,7 @@ export default function Auth() {
                         type={showPassword ? "text" : "password"}
                         placeholder="Sua senha"
                         value={loginData.password}
+                        autoComplete="off"
                         onChange={(e) => setLoginData((prev) => ({ ...prev, password: e.target.value }))}
                         required
                       />
@@ -195,6 +196,7 @@ export default function Auth() {
                         type={showPassword ? "text" : "password"}
                         placeholder="Crie uma senha"
                         value={registerData.password}
+                        autoComplete="off"
                         onChange={(e) => setRegisterData((prev) => ({ ...prev, password: e.target.value }))}
                         required
                       />
@@ -217,6 +219,7 @@ export default function Auth() {
                       type={showPassword ? "text" : "password"}
                       placeholder="Confirme sua senha"
                       value={registerData.confirmPassword}
+                      autoComplete="off"
                       onChange={(e) => setRegisterData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
                       required
                     />
