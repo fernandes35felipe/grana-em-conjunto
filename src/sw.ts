@@ -15,9 +15,9 @@ registerRoute(
     plugins: [
       new ExpirationPlugin({
         maxEntries: 10,
-        maxAgeSeconds: 60 * 60 * 24 * 365
-      })
-    ]
+        maxAgeSeconds: 60 * 60 * 24 * 365,
+      }),
+    ],
   })
 );
 
@@ -27,13 +27,13 @@ registerRoute(
     cacheName: "google-fonts-webfonts",
     plugins: [
       new CacheableResponsePlugin({
-        statuses: [0, 200]
+        statuses: [0, 200],
       }),
       new ExpirationPlugin({
         maxEntries: 30,
-        maxAgeSeconds: 60 * 60 * 24 * 365
-      })
-    ]
+        maxAgeSeconds: 60 * 60 * 24 * 365,
+      }),
+    ],
   })
 );
 
@@ -44,13 +44,13 @@ registerRoute(
     networkTimeoutSeconds: 10,
     plugins: [
       new CacheableResponsePlugin({
-        statuses: [0, 200]
+        statuses: [0, 200],
       }),
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 60 * 5
-      })
-    ]
+        maxAgeSeconds: 60 * 5,
+      }),
+    ],
   })
 );
 
@@ -65,11 +65,11 @@ self.addEventListener("push", (event) => {
   } catch (error) {
     data = {
       title: event.data.text(),
-      body: ""
+      body: "",
     };
   }
 
-  const title = data.title || "FinanceAgent";
+  const title = data.title || "Zeni Wallet";
   const options = {
     body: data.body || "",
     icon: "/icons/icon-192x192.png",
@@ -79,17 +79,17 @@ self.addEventListener("push", (event) => {
     actions: data.actions || [
       {
         action: "view",
-        title: "Ver"
+        title: "Ver",
       },
       {
         action: "dismiss",
-        title: "Dispensar"
-      }
+        title: "Dispensar",
+      },
     ],
     data: {
       url: data.url || "/",
-      ...data.data
-    }
+      ...data.data,
+    },
   };
 
   if (data.vibrate) {
@@ -115,7 +115,7 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({
         type: "window",
-        includeUncontrolled: true
+        includeUncontrolled: true,
       })
       .then((clientList) => {
         for (const client of clientList) {

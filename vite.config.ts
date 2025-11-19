@@ -22,8 +22,8 @@ export default defineConfig(() => ({
       includeAssets: ["pwa-192x192.png", "pwa-512x512.png"],
 
       manifest: {
-        name: "FinanceAgent - Gestão Financeira Pessoal",
-        short_name: "FinanceAgent",
+        name: "Zeni Wallet - Gestão Financeira Pessoal",
+        short_name: "Zeni Wallet",
         description: "Gerenciamento financeiro pessoal e em grupo",
         theme_color: "#10b981",
         background_color: "#0f172a",

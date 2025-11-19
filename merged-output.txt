@@ -1,13 +1,13 @@
 # Code Merge Output
-Generated at: 2025-11-19T20:26:25.132Z
+Generated at: 2025-11-19T20:35:17.413Z
 Source path: .
 Files processed: 120
-Total lines: 14042
-Total characters: 486493
+Total lines: 14043
+Total characters: 486508
 
 File types:
   - tsx: 82 files (10.731 lines)
-  - ts: 28 files (2.994 lines)
+  - ts: 28 files (2.995 lines)
   - json: 6 files (208 lines)
   - js: 3 files (35 lines)
   - md: 1 files (74 lines)
@@ -30,7 +30,7 @@ Project structure & file index:
   src/
     - App.tsx (91 lines)
     - main.tsx (13 lines)
-    - sw.ts (145 lines)
+    - sw.ts (146 lines)
     - vite-env.d.ts (2 lines)
     components/
       - LoadingFallback.tsx (13 lines)
@@ -4274,7 +4274,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               <Sidebar onNavigate={() => setSidebarOpen(false)} />
             </SheetContent>
           </Sheet>
-          <h1 className="text-lg font-semibold">FinanceAgent</h1>
+          <h1 className="text-lg font-semibold">Zeni Wallet</h1>
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -4331,7 +4331,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
       <div className="p-6">
         <div className="flex items-center gap-2 mb-2">
           <DollarSign className="h-8 w-8 text-primary" />
-          <h1 className="text-xl font-bold text-foreground">FinanceAgent</h1>
+          <h1 className="text-xl font-bold text-foreground">Zeni Wallet</h1>
         </div>
         {user && <p className="text-sm text-muted-foreground truncate">Olá, {user.email}</p>}
       </div>
@@ -12749,9 +12749,9 @@ registerRoute(
     plugins: [
       new ExpirationPlugin({
         maxEntries: 10,
-        maxAgeSeconds: 60 * 60 * 24 * 365
-      })
-    ]
+        maxAgeSeconds: 60 * 60 * 24 * 365,
+      }),
+    ],
   })
 );
 
@@ -12761,13 +12761,13 @@ registerRoute(
     cacheName: "google-fonts-webfonts",
     plugins: [
       new CacheableResponsePlugin({
-        statuses: [0, 200]
+        statuses: [0, 200],
       }),
       new ExpirationPlugin({
         maxEntries: 30,
-        maxAgeSeconds: 60 * 60 * 24 * 365
-      })
-    ]
+        maxAgeSeconds: 60 * 60 * 24 * 365,
+      }),
+    ],
   })
 );
 
@@ -12778,13 +12778,13 @@ registerRoute(
     networkTimeoutSeconds: 10,
     plugins: [
       new CacheableResponsePlugin({
-        statuses: [0, 200]
+        statuses: [0, 200],
       }),
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 60 * 5
-      })
-    ]
+        maxAgeSeconds: 60 * 5,
+      }),
+    ],
   })
 );
 
@@ -12799,11 +12799,11 @@ self.addEventListener("push", (event) => {
   } catch (error) {
     data = {
       title: event.data.text(),
-      body: ""
+      body: "",
     };
   }
 
-  const title = data.title || "FinanceAgent";
+  const title = data.title || "Zeni Wallet";
   const options = {
     body: data.body || "",
     icon: "/icons/icon-192x192.png",
@@ -12813,17 +12813,17 @@ self.addEventListener("push", (event) => {
     actions: data.actions || [
       {
         action: "view",
-        title: "Ver"
+        title: "Ver",
       },
       {
         action: "dismiss",
-        title: "Dispensar"
-      }
+        title: "Dispensar",
+      },
     ],
     data: {
       url: data.url || "/",
-      ...data.data
-    }
+      ...data.data,
+    },
   };
 
   if (data.vibrate) {
@@ -12849,7 +12849,7 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({
         type: "window",
-        includeUncontrolled: true
+        includeUncontrolled: true,
       })
       .then((clientList) => {
         for (const client of clientList) {
@@ -12877,6 +12877,7 @@ self.addEventListener("activate", (event) => {
   console.log("Service Worker activating...");
   event.waitUntil(self.clients.claim());
 });
+
 ----------------------------------------
 ENDOFFILE: src\sw.ts
 
@@ -14757,8 +14758,8 @@ export default defineConfig(() => ({
       includeAssets: ["pwa-192x192.png", "pwa-512x512.png"],
 
       manifest: {
-        name: "FinanceAgent - Gestão Financeira Pessoal",
-        short_name: "FinanceAgent",
+        name: "Zeni Wallet - Gestão Financeira Pessoal",
+        short_name: "Zeni Wallet",
         description: "Gerenciamento financeiro pessoal e em grupo",
         theme_color: "#10b981",
         background_color: "#0f172a",

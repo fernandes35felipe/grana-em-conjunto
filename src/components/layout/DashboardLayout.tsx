@@ -30,7 +30,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               <Sidebar onNavigate={() => setSidebarOpen(false)} />
             </SheetContent>
           </Sheet>
-          <h1 className="text-lg font-semibold">FinanceAgent</h1>
+          <h1 className="text-lg font-semibold">Zeni Wallet</h1>
         </header>
 
         <main className="flex-1 overflow-y-auto">

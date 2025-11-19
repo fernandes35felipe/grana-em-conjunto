@@ -39,7 +39,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
       <div className="p-6">
         <div className="flex items-center gap-2 mb-2">
           <DollarSign className="h-8 w-8 text-primary" />
-          <h1 className="text-xl font-bold text-foreground">FinanceAgent</h1>
+          <h1 className="text-xl font-bold text-foreground">Zeni Wallet</h1>
         </div>
         {user && <p className="text-sm text-muted-foreground truncate">Olá, {user.email}</p>}
       </div>
