@@ -205,9 +205,7 @@ export class PushNotificationService {
       outputArray[i] = rawData.charCodeAt(i);
     }
 
-    // === ESTA É A CORREÇÃO ===
-    // Mude de: return outputArray.buffer.slice(0);
-    return outputArray; // Retorne o Uint8Array diretamente
+    return outputArray;
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer | null): string {
