@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
-
 import type { PushSubscription } from "@/utils/types/reminder.types";
+
 const PUBLIC_VAPID_KEY =
   import.meta.env.VITE_VAPID_PUBLIC_KEY || "BETwmgmXXkeAecI8eHXj-kCKkj_0c-qDX3znwN4oCgQUn2QAblyPI3E1Sc3xLgurcNnz12-K8AuUYyTyQLIFXT4";
 
@@ -29,12 +29,15 @@ export class PushNotificationService {
     }
 
     try {
-      this.registration = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
-      console.log("Service Worker registrado com sucesso");
+      // CORREÇÃO AQUI:
+      // Em vez de tentar registrar manualmente com .register("/sw.js"),
+      // nós aguardamos o registro que o VitePWA já fez automaticamente.
+      this.registration = await navigator.serviceWorker.ready;
+
+      console.log("Service Worker recuperado e pronto:", this.registration);
       return true;
     } catch (error) {
-      console.error("Erro ao registrar Service Worker:", error);
+      console.error("Erro ao obter Service Worker:", error);
       return false;
     }
   }
@@ -57,15 +60,17 @@ export class PushNotificationService {
   }
 
   async subscribe(userId: string): Promise<PushSubscription | null> {
+    // Garante que está inicializado antes de prosseguir
     if (!this.registration) {
       const initialized = await this.initialize();
       if (!initialized) {
-        throw new Error("Falha ao inicializar Service Worker");
+        throw new Error("Falha ao inicializar Service Worker (SW não encontrado ou não suportado)");
       }
     }
 
+    // Verificação de segurança adicional
     if (!this.registration) {
-      throw new Error("Service Worker não registrado");
+      throw new Error("Service Worker Registration é nulo após inicialização.");
     }
 
     const permission = await this.requestPermission();
@@ -74,10 +79,17 @@ export class PushNotificationService {
     }
 
     try {
-      const subscription = await this.registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
-      });
+      // Verifica se já existe uma inscrição
+      let subscription = await this.registration.pushManager.getSubscription();
+
+      // Se não existir, cria uma nova
+      if (!subscription) {
+        subscription = await this.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array(PUBLIC_VAPID_KEY),
+        });
+      }
+
       const subscriptionData = {
         user_id: userId,
         endpoint: subscription.endpoint,
@@ -86,20 +98,23 @@ export class PushNotificationService {
         user_agent: navigator.userAgent,
         is_active: true,
       };
+
       const { data, error } = await supabase
         .from("push_subscriptions" as any)
         .upsert(subscriptionData, { onConflict: "endpoint" })
         .select()
         .single();
+
       if (error) throw error;
 
       console.log("Inscrição push criada com sucesso");
 
       await this.showNotification("Notificações Ativadas!", {
         body: "Você receberá lembretes mesmo quando não estiver usando o aplicativo.",
-        icon: "/icons/icon-192x192.png",
-        badge: "/icons/badge-96x96.png",
+        icon: "/pwa-192x192.png", // Atualizei o caminho do ícone para garantir que existe
+        badge: "/pwa-192x192.png",
       });
+
       return data;
     } catch (error) {
       console.error("Erro ao criar inscrição push:", error);
@@ -128,8 +143,16 @@ export class PushNotificationService {
   }
 
   async isSubscribed(): Promise<boolean> {
+    // Tenta obter o registro sem forçar inicialização pesada se possível
     if (!this.registration) {
-      await this.initialize();
+      // Tenta pegar o ready sem bloquear muito tempo se já estiver ativo
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        this.registration = reg;
+      } else {
+        // Se não encontrar, tenta o ready
+        return false;
+      }
     }
 
     if (!this.registration) {
@@ -148,59 +171,46 @@ export class PushNotificationService {
     }
 
     if (!this.registration) {
-      console.warn("Service Worker registration not found. Initializing...");
       await this.initialize();
-      if (!this.registration) {
-        console.error("Falha ao encontrar o registration do Service Worker. Usando fallback.");
-        try {
-          new Notification(title, {
-            icon: "/icons/icon-192x192.png",
-            badge: "/icons/badge-96x96.png",
-            ...options,
-          });
-          console.log("Notificação exibida (fallback):", title);
-        } catch (e) {
-          console.error("Erro ao exibir notificação de fallback:", e);
-        }
-        return;
-      }
     }
 
-    try {
-      this.registration.active?.postMessage({
-        type: "show-notification",
-        title: title,
-        options: {
-          badge: "/icons/badge-96x96.png",
-          icon: "/icons/icon-192x192.png",
+    if (this.registration && this.registration.active) {
+      try {
+        this.registration.showNotification(title, {
+          icon: "/pwa-192x192.png",
+          badge: "/pwa-192x192.png",
           vibrate: [200, 100, 200],
           requireInteraction: false,
           ...options,
-        },
-      });
-      console.log("Mensagem de notificação enviada ao Service Worker:", title);
-    } catch (error) {
-      console.error("Erro ao enviar mensagem para o Service Worker:", error);
-      try {
-        new Notification(title, {
-          icon: "/icons/icon-192x192.png",
-          badge: "/icons/badge-96x96.png",
-          ...options,
         });
-        console.log("Notificação exibida (fallback 2):", title);
       } catch (e) {
-        console.error("Erro ao exibir notificação de fallback 2:", e);
+        console.error("Erro ao exibir notificação via SW:", e);
+        this.fallbackNotification(title, options);
       }
+    } else {
+      this.fallbackNotification(title, options);
+    }
+  }
+
+  private fallbackNotification(title: string, options?: NotificationOptions) {
+    try {
+      new Notification(title, {
+        icon: "/pwa-192x192.png",
+        badge: "/pwa-192x192.png",
+        ...options,
+      });
+    } catch (e) {
+      console.error("Erro ao exibir notificação de fallback:", e);
     }
   }
 
   private urlBase64ToUint8Array(base64String: string): Uint8Array {
-    // <-- MUDE O TIPO DE RETORNO PARA Uint8Array
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
 
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
+
     for (let i = 0; i < rawData.length; ++i) {
       outputArray[i] = rawData.charCodeAt(i);
     }

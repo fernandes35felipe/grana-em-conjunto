@@ -11,41 +11,18 @@ export default defineConfig(() => ({
   plugins: [
     react(),
     VitePWA({
+      // Estratégia para usar seu arquivo personalizado
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+
       registerType: "autoUpdate",
       injectRegister: "auto",
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff,woff2}"],
-        cleanupOutdatedCaches: true,
-        skipWaiting: true,
-        clientsClaim: true,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts-cache",
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api-cache",
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 5,
-              },
-            },
-          },
-        ],
-      },
+
+      includeAssets: ["pwa-192x192.png", "pwa-512x512.png"],
+
       manifest: {
-        name: "FinanceAgent - Gestão Financeira",
+        name: "FinanceAgent - Gestão Financeira Pessoal",
         short_name: "FinanceAgent",
         description: "Gerenciamento financeiro pessoal e em grupo",
         theme_color: "#10b981",
@@ -54,33 +31,32 @@ export default defineConfig(() => ({
         orientation: "portrait",
         scope: "/",
         start_url: "/",
+        lang: "pt-BR",
         icons: [
           {
-            src: "/pwa-192x192.svg",
+            src: "/pwa-192x192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/pwa-512x512.svg",
+            src: "/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
           },
           {
-            src: "/pwa-192x192.svg",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "/pwa-512x512.svg",
+            src: "/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any maskable",
           },
         ],
       },
+
+      // Configurações vitais para desenvolvimento
       devOptions: {
         enabled: true,
-        type: "module",
+        type: "module", // Importante para TypeScript no SW
+        navigateFallback: "index.html",
       },
     }),
   ],
