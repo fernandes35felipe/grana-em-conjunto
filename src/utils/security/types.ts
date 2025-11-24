@@ -6,7 +6,7 @@ export interface ValidationResult {
 export interface TransactionData {
   description: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   category: string;
   date: string;
   group_id?: string | null;
@@ -15,6 +15,7 @@ export interface TransactionData {
   is_fixed?: boolean;
   recurrence_count?: number | null;
   recurrence_id?: string | null;
+  event_id?: string | null; // Adicionado
 }
 
 export interface InvestmentData {
@@ -34,6 +35,12 @@ export interface GroupData {
   description?: string | null;
   color?: string | null;
   created_by?: string | null;
+}
+
+export interface EventData {
+  name: string;
+  description?: string | null;
+  date: string;
 }
 
 export interface RateLimitEntry {

@@ -41,4 +41,5 @@ export {
   UserPlus,
   UserMinus,
   Bell,
+  Layers,
 } from "lucide-react";

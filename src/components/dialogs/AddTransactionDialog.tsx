@@ -37,6 +37,7 @@ interface AddTransactionDialogProps {
   type: "income" | "expense";
   trigger?: React.ReactNode;
   onSuccess?: () => void;
+  eventId?: string; // Adicionado: ID do evento opcional
 }
 
 interface TransactionFormData {
@@ -57,7 +58,7 @@ interface ReminderFormData {
   repeat_type: RepeatType;
 }
 
-export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactionDialogProps) => {
+export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { createReminder } = useReminders();
@@ -109,10 +110,11 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
   };
 
   useEffect(() => {
-    if (open) {
+    if (open && !eventId) {
+      // Só carrega grupos se não for um evento
       loadGroups();
     }
-  }, [open]);
+  }, [open, eventId]);
 
   useEffect(() => {
     if (values.group_id && values.group_id !== "personal") {
@@ -178,6 +180,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         group_id: values.group_id === "personal" ? null : sanitizeUUID(values.group_id),
         is_recurring: Boolean(values.is_recurring),
         is_fixed: Boolean(values.is_fixed),
+        event_id: eventId ? sanitizeUUID(eventId) : null, // Vincula ao evento se existir
       };
 
       const validationErrors = validateTransactionData(sanitizedData);
@@ -217,6 +220,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
               is_fixed: sanitizedData.is_fixed,
               recurrence_id: recurrenceId,
               recurrence_count: recurrenceCount,
+              event_id: sanitizedData.event_id, // Campo novo
             });
           }
 
@@ -244,22 +248,9 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
         30
       );
 
-      let successMessage = "";
-      if (values.is_fixed) {
-        successMessage = `${type === "income" ? "Receita" : "Despesa"} fixa adicionada com sucesso!`;
-      } else if (values.is_recurring) {
-        successMessage = `${type === "income" ? "Receita" : "Despesa"} recorrente adicionada com sucesso!`;
-      } else {
-        successMessage = `${type === "income" ? "Receita" : "Despesa"} adicionada com sucesso!`;
-      }
-
-      if (reminderData.enabled) {
-        successMessage += " Lembrete criado!";
-      }
-
       toast({
         title: "Sucesso",
-        description: successMessage,
+        description: "Transação adicionada com sucesso!",
       });
 
       resetForm();
@@ -283,7 +274,9 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Adicionar {type === "income" ? "Receita" : "Despesa"}</DialogTitle>
-          <DialogDescription>Preencha os dados da {type === "income" ? "receita" : "despesa"}</DialogDescription>
+          <DialogDescription>
+            Preencha os dados {eventId ? "do item do evento" : `da ${type === "income" ? "receita" : "despesa"}`}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -293,7 +286,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
               name="description"
               value={values.description}
               onChange={handleInputChange}
-              placeholder="Ex: Salário, Aluguel, Supermercado..."
+              placeholder="Ex: Passagem aérea, Jantar..."
               required
             />
           </div>
@@ -340,28 +333,31 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="group_id">Grupo</Label>
-            <Select
-              name="group_id"
-              value={values.group_id}
-              onValueChange={(value) => handleInputChange({ target: { name: "group_id", value } } as any)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="personal">Pessoal</SelectItem>
-                {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Oculta grupo se for um evento, pois eventos geralmente são "containers" próprios */}
+          {!eventId && (
+            <div className="space-y-2">
+              <Label htmlFor="group_id">Grupo</Label>
+              <Select
+                name="group_id"
+                value={values.group_id}
+                onValueChange={(value) => handleInputChange({ target: { name: "group_id", value } } as any)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="personal">Pessoal</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          {values.group_id !== "personal" && groupMembers.length > 0 && (
+          {values.group_id !== "personal" && !eventId && groupMembers.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="assigned_to">Atribuir a</Label>
               <Select
@@ -386,48 +382,52 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess }: AddTransactio
 
           <Separator />
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="is_recurring">Transação Recorrente</Label>
-              <p className="text-sm text-muted-foreground">Repetir por um número específico de vezes</p>
-            </div>
-            <Switch
-              id="is_recurring"
-              name="is_recurring"
-              checked={values.is_recurring}
-              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
-            />
-          </div>
+          {/* Desativar recorrência e fixo dentro de eventos por simplicidade inicial */}
+          {!eventId && (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_recurring">Transação Recorrente</Label>
+                  <p className="text-sm text-muted-foreground">Repetir por um número específico de vezes</p>
+                </div>
+                <Switch
+                  id="is_recurring"
+                  name="is_recurring"
+                  checked={values.is_recurring}
+                  onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
+                />
+              </div>
 
-          {values.is_recurring && (
-            <div className="space-y-2">
-              <Label htmlFor="recurrence_count">Número de Repetições</Label>
-              <Input
-                id="recurrence_count"
-                name="recurrence_count"
-                type="number"
-                min="1"
-                max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
-                value={values.recurrence_count}
-                onChange={handleInputChange}
-              />
-            </div>
+              {values.is_recurring && (
+                <div className="space-y-2">
+                  <Label htmlFor="recurrence_count">Número de Repetições</Label>
+                  <Input
+                    id="recurrence_count"
+                    name="recurrence_count"
+                    type="number"
+                    min="1"
+                    max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
+                    value={values.recurrence_count}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_fixed">Lançamento Fixo</Label>
+                  <p className="text-sm text-muted-foreground">Repetir mensalmente por 12 meses</p>
+                </div>
+                <Switch
+                  id="is_fixed"
+                  name="is_fixed"
+                  checked={values.is_fixed}
+                  onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
+                />
+              </div>
+              <Separator />
+            </>
           )}
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="is_fixed">Lançamento Fixo</Label>
-              <p className="text-sm text-muted-foreground">Repetir mensalmente por 12 meses</p>
-            </div>
-            <Switch
-              id="is_fixed"
-              name="is_fixed"
-              checked={values.is_fixed}
-              onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
-            />
-          </div>
-
-          <Separator />
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">

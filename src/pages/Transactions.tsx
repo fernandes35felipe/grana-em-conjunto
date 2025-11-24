@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2 } from "@/lib/icons";
+import { useState, useEffect, useMemo } from "react";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Calendar as CalendarIcon, Layers } from "@/lib/icons";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { AddEventDialog } from "@/components/dialogs/AddEventDialog"; // Novo
+import { EventDetailsModal } from "@/components/transactions/EventDetailsModal"; // Novo
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +24,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { VirtualizedTransactionsList } from "@/components/VirtualizedTransactionsList";
 
+// Tipos extendidos
 interface Transaction {
   id: string;
   description: string;
@@ -32,15 +34,29 @@ interface Transaction {
   category: string;
   date: string;
   group_id: string | null;
+  event_id: string | null; // Novo
   group_name?: string;
   is_fixed: boolean;
   is_recurring: boolean;
   recurrence_id: string | null;
 }
 
+interface Event {
+  id: string;
+  name: string;
+  description: string;
+  date: string;
+  totalAmount?: number; // Calculado no frontend
+}
+
+type DisplayItem = { kind: "transaction"; data: Transaction } | { kind: "event"; data: Event };
+
 const Transactions = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
@@ -49,36 +65,44 @@ const Transactions = () => {
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
   });
+
+  // Modais
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null); // Para abrir o modal do evento
+
   const { toast } = useToast();
+
   useEffect(() => {
-    loadTransactions();
+    loadData();
   }, [dateRange]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([loadTransactions(), loadEvents()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadTransactions = async () => {
     try {
-      setLoading(true);
-      let query = supabase
-        .from("transactions")
-        .select(
-          `
-          *,
-          groups!left (
-            name
-          )
-        `
-        )
-        .order("date", { ascending: false });
-      if (dateRange.from) {
-        query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
-      }
-      if (dateRange.to) {
-        query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
-      }
+      let query = supabase.from("transactions").select(`*, groups!left (name)`).order("date", { ascending: false });
+
+      // Aplica filtro de data apenas se não tiver event_id (transações de eventos carregamos todas para somar correto, ou filtramos depois)
+      // Nota: Para simplificar a visualização, vamos carregar tudo do período para a lista principal
+      // e para eventos, talvez precisemos carregar todas do evento independente da data?
+      // Por simplicidade, vamos carregar transações do período. Se o evento for antigo mas tiver transação nova, ele aparece?
+      // Vamos carregar TUDO do período selecionado.
+
+      if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
+      if (dateRange.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
       const { data, error } = await query;
 
       if (error) throw error;
+
       const formattedData =
         data?.map((t) => ({
           id: t.id,
@@ -88,9 +112,9 @@ const Transactions = () => {
           category: t.category,
           date: t.date,
           group_id: t.group_id,
+          event_id: t.event_id,
           group_name: t.groups?.name,
           is_fixed: t.is_fixed || false,
-
           is_recurring: t.is_recurring || false,
           recurrence_id: t.recurrence_id,
         })) || [];
@@ -98,129 +122,197 @@ const Transactions = () => {
       setTransactions(formattedData);
     } catch (error) {
       console.error("Erro ao carregar transações:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao carregar transações",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
     }
   };
+
+  const loadEvents = async () => {
+    try {
+      // Carrega eventos que ocorreram neste período (data de referência)
+      // OU eventos que têm transações neste período? Vamos pela data de referência do evento por enquanto.
+      let query = supabase
+        .from("events" as any)
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
+      if (dateRange.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setEvents(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar eventos:", error);
+    }
+  };
+
+  // Lógica de Deleção de Transação Simples
   const handleDeleteClick = (transaction: Transaction) => {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
   };
+
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
-        const { error } = await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
-        if (error) throw error;
-
-        toast({
-          title: "Sucesso",
-          description: "Lançamento fixo removido de todos os meses com sucesso",
-        });
+        await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
       } else {
-        const { error } = await supabase.from("transactions").delete().eq("id", transactionToDelete.id);
-        if (error) throw error;
-
-        toast({
-          title: "Sucesso",
-          description: "Transação removida com sucesso",
-        });
+        await supabase.from("transactions").delete().eq("id", transactionToDelete.id);
       }
-
+      toast({ title: "Sucesso", description: "Transação removida" });
       loadTransactions();
     } catch (error) {
-      console.error("Erro ao remover transação:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao remover transação",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Erro ao remover", variant: "destructive" });
     } finally {
       setDeleteDialogOpen(false);
       setTransactionToDelete(null);
     }
   };
-  const filteredTransactions = transactions.filter((transaction) => {
-    const matchesSearch =
-      transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = filterType === "all" || transaction.type === filterType;
-    const matchesCategory = filterCategory === "all" || transaction.category === filterCategory;
-    const matchesGroup = filterGroup === "all" || (filterGroup === "none" && !transaction.group_id) || transaction.group_id === filterGroup;
 
-    return matchesSearch && matchesType && matchesCategory && matchesGroup;
-  });
-  const totalIncome = filteredTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = filteredTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  // --- Lógica de Mesclagem e Exibição ---
+
+  // 1. Calcular totais dos eventos baseados nas transações carregadas (ou buscar totais reais do banco se preferir)
+  // Estratégia: Vamos buscar o total REAL de cada evento carregado, independente do filtro de data da transação
+  // Para a UI ficar rápida, vamos fazer um fetch separado de somatórios para os eventos listados
+  useEffect(() => {
+    if (events.length > 0) {
+      updateEventTotals();
+    }
+  }, [events.length]); // Atualiza quando a lista de eventos muda
+
+  const updateEventTotals = async () => {
+    const eventIds = events.map((e) => e.id);
+    if (eventIds.length === 0) return;
+
+    const { data } = await supabase.from("transactions").select("event_id, amount, type").in("event_id", eventIds);
+
+    if (data) {
+      setEvents((prev) =>
+        prev.map((ev) => {
+          const evTrans = data.filter((t) => t.event_id === ev.id);
+          const total = evTrans.reduce((acc, t) => acc + (t.type === "income" ? t.amount : -Math.abs(t.amount)), 0);
+          return { ...ev, totalAmount: total };
+        })
+      );
+    }
+  };
+
+  // 2. Preparar lista de exibição
+  const displayList = useMemo(() => {
+    const list: DisplayItem[] = [];
+
+    // Adiciona transações que NÃO têm event_id (transações soltas)
+    transactions.forEach((t) => {
+      if (!t.event_id) {
+        list.push({ kind: "transaction", data: t });
+      }
+    });
+
+    // Adiciona os eventos
+    events.forEach((e) => {
+      list.push({ kind: "event", data: e });
+    });
+
+    // Filtros em memória
+    return list
+      .filter((item) => {
+        if (item.kind === "transaction") {
+          const matchesSearch =
+            item.data.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.data.category.toLowerCase().includes(searchTerm.toLowerCase());
+          const matchesType = filterType === "all" || item.data.type === filterType;
+          const matchesCategory = filterCategory === "all" || item.data.category === filterCategory;
+          const matchesGroup =
+            filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
+          return matchesSearch && matchesType && matchesCategory && matchesGroup;
+        } else {
+          // Filtros para eventos
+          const matchesSearch = item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
+          // Evento aparece independente de filtro de categoria/tipo por enquanto, ou pode ser refinado
+          return matchesSearch;
+        }
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.kind === "transaction" ? a.data.date : a.data.date).getTime();
+        const dateB = new Date(b.kind === "transaction" ? b.data.date : b.data.date).getTime();
+        return dateB - dateA; // Decrescente
+      });
+  }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup]);
+
+  // Cálculos de Totais para o Header (considerando apenas o que está visível ou tudo?)
+  // Geralmente dashboard soma tudo. Aqui vamos somar o que está filtrado na lista "solta" + totais dos eventos?
+  // Atenção: Se somarmos eventos + transações, e as transações do evento não estão na lista, ok.
+  // Mas o filtro de data pegou transações "soltas" dentro da data e eventos dentro da data.
+
+  const totalIncome = displayList.reduce((acc, item) => {
+    if (item.kind === "transaction" && item.data.type === "income") return acc + item.data.amount;
+    if (item.kind === "event" && (item.data.totalAmount || 0) > 0) return acc + (item.data.totalAmount || 0);
+    return acc;
+  }, 0);
+
+  const totalExpense = displayList.reduce((acc, item) => {
+    if (item.kind === "transaction" && item.data.type === "expense") return acc + Math.abs(item.data.amount);
+    if (item.kind === "event" && (item.data.totalAmount || 0) < 0) return acc + Math.abs(item.data.totalAmount || 0);
+    return acc;
+  }, 0);
+
   const balance = totalIncome - totalExpense;
-
   const categories = Array.from(new Set(transactions.map((t) => t.category)));
+
   const clearFilters = () => {
     setSearchTerm("");
     setFilterType("all");
     setFilterCategory("all");
     setFilterGroup("all");
   };
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Transações</h1>
-            <p className="text-muted-foreground">Gerencie todas as suas entradas e saídas</p>
+            <p className="text-muted-foreground">Gerencie suas entradas, saídas e eventos</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <AddEventDialog onSuccess={loadData} /> {/* Botão Novo de Evento */}
             <AddTransactionDialog
               type="income"
-              onSuccess={loadTransactions}
+              onSuccess={loadData}
               trigger={
                 <Button variant="outline">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova Receita
+                  <Plus className="h-4 w-4 mr-2" /> Receita
                 </Button>
               }
             />
             <AddTransactionDialog
               type="expense"
-              onSuccess={loadTransactions}
+              onSuccess={loadData}
               trigger={
                 <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova Despesa
+                  <Plus className="h-4 w-4 mr-2" /> Despesa
                 </Button>
               }
             />
           </div>
         </div>
 
+        {/* Cards de Totais e Filtros mantidos iguais... */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filtros
+              <Filter className="h-5 w-5" /> Filtros
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-
-                  <Input
-                    placeholder="Buscar transações..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+                  <Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
                 </div>
-
                 <Select value={filterType} onValueChange={setFilterType}>
                   <SelectTrigger>
                     <SelectValue placeholder="Tipo" />
@@ -231,12 +323,10 @@ const Transactions = () => {
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
                 </Select>
-
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
-
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
                     {categories.map((cat) => (
@@ -246,7 +336,6 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
-
                 <Select value={filterGroup} onValueChange={setFilterGroup}>
                   <SelectTrigger>
                     <SelectValue placeholder="Grupo" />
@@ -256,9 +345,8 @@ const Transactions = () => {
                     <SelectItem value="none">Pessoal</SelectItem>
                   </SelectContent>
                 </Select>
-
                 <Button variant="outline" onClick={clearFilters}>
-                  Limpar Filtros
+                  Limpar
                 </Button>
               </div>
             </div>
@@ -272,38 +360,27 @@ const Transactions = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-success">
-                {totalIncome.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
+                {totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">Total Despesas</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-destructive">
-                {totalExpense.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
+                {totalExpense.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">Saldo</CardTitle>
             </CardHeader>
             <CardContent>
               <div className={cn("text-2xl font-bold", balance >= 0 ? "text-success" : "text-destructive")}>
-                {balance.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
+                {balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </div>
             </CardContent>
           </Card>
@@ -311,111 +388,151 @@ const Transactions = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Transações</CardTitle>
+            <CardTitle>Lançamentos</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
-            ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Nenhuma transação encontrada</div>
+            ) : displayList.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Nenhum lançamento encontrado</div>
             ) : (
               <div className="space-y-4">
-                {filteredTransactions.map((transaction) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
+                {displayList.map((item) => {
+                  if (item.kind === "event") {
+                    // Renderização do Card de Evento
+                    const ev = item.data;
+                    const total = ev.totalAmount || 0;
+                    return (
                       <div
-                        className={cn(
-                          "p-2 rounded-full",
-                          transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-                        )}
+                        key={`event-${ev.id}`}
+                        onClick={() => setSelectedEvent(ev)}
+                        className="flex items-center justify-between p-4 rounded-lg border bg-accent/5 hover:bg-accent/10 border-l-4 border-l-primary cursor-pointer transition-all"
                       >
-                        {transaction.type === "income" ? <ArrowUpCircle className="h-5 w-5" /> : <ArrowDownCircle className="h-5 w-5" />}
-                      </div>
-                      <div>
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 rounded-full bg-primary/20 text-primary">
+                            <Layers className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-primary">{ev.name}</p>
+                              <Badge className="bg-primary text-primary-foreground hover:bg-primary/90 text-[10px]">Evento</Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(ev.date).toLocaleDateString("pt-BR")} • Clique para ver detalhes
+                            </span>
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{transaction.description}</p>
-
-                          {transaction.is_fixed && (
-                            <Badge variant="outline" className="text-xs">
-                              Fixo
-                            </Badge>
-                          )}
-                          {transaction.is_recurring && !transaction.is_fixed && (
-                            <Badge variant="outline" className="text-xs">
-                              Recorrente
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs">
-                            {transaction.category}
-                          </Badge>
-                          {transaction.group_name && (
-                            <Badge variant="outline" className="text-xs">
-                              {transaction.group_name}
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</span>
+                          <p className={cn("font-semibold text-lg", total >= 0 ? "text-success" : "text-destructive")}>
+                            {total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className={cn("font-semibold text-lg", transaction.type === "income" ? "text-success" : "text-destructive")}>
-                        {transaction.type === "income" ? "+" : "-"}
-                        {Math.abs(transaction.amount).toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                      </p>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteClick(transaction)}
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    );
+                  } else {
+                    // Renderização da Transação Normal
+                    const transaction = item.data;
+                    return (
+                      <div
+                        key={transaction.id}
+                        className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={cn(
+                              "p-2 rounded-full",
+                              transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                            )}
+                          >
+                            {transaction.type === "income" ? (
+                              <ArrowUpCircle className="h-5 w-5" />
+                            ) : (
+                              <ArrowDownCircle className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{transaction.description}</p>
+                              {transaction.is_fixed && (
+                                <Badge variant="outline" className="text-xs">
+                                  Fixo
+                                </Badge>
+                              )}
+                              {transaction.is_recurring && !transaction.is_fixed && (
+                                <Badge variant="outline" className="text-xs">
+                                  Recorrente
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="secondary" className="text-xs">
+                                {transaction.category}
+                              </Badge>
+                              {transaction.group_name && (
+                                <Badge variant="outline" className="text-xs">
+                                  {transaction.group_name}
+                                </Badge>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(transaction.date).toLocaleDateString("pt-BR")}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className={cn("font-semibold text-lg", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                            {transaction.type === "income" ? "+" : "-"}
+                            {Math.abs(transaction.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteClick(transaction)}
+                            className="text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Modais */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-
-              <AlertDialogDescription>
-                {transactionToDelete?.is_fixed ? (
-                  <>
-                    Este é um lançamento <strong>fixo</strong>. Ao confirmar, ele será removido de <strong>todos os meses</strong>. Esta
-                    ação não pode ser desfeita.
-                  </>
-                ) : (
-                  <>Tem certeza que deseja remover esta transação? Esta ação não pode ser desfeita.</>
-                )}
-              </AlertDialogDescription>
+              <AlertDialogDescription>Tem certeza que deseja remover esta transação?</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteConfirm}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Remover{transactionToDelete?.is_fixed ? " de Todos os Meses" : ""}
+              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">
+                Remover
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {selectedEvent && (
+          <EventDetailsModal
+            isOpen={!!selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+            eventId={selectedEvent.id}
+            eventName={selectedEvent.name}
+            eventDate={selectedEvent.date}
+            onUpdate={() => {
+              loadData(); // Recarrega lista principal ao mudar algo no modal
+              updateEventTotals();
+            }}
+          />
+        )}
       </div>
     </DashboardLayout>
   );
