@@ -173,18 +173,402 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sua_key_anon
 VITE_VAPID_PUBLIC_KEY=sua_chave_publica_webpush
 ```
 
-#### 4. Configure o banco de dados:
-
-- Execute as migrations no Supabase Dashboard
-- Configure as políticas RLS conforme documentação
-
-#### 5. Execute o projeto:
+#### 4. Execute o projeto:
 
 ```bash
 npm run dev       # Desenvolvimento
 npm run build     # Build de produção
 npm run preview   # Preview da build
 ```
+
+### 🗄️ Configuração do Supabase
+
+Para que o Zeni Wallet funcione corretamente, você precisa configurar seu projeto Supabase com as tabelas, políticas RLS, triggers e funções necessárias.
+
+#### 📊 1. Estrutura do Banco de Dados
+
+Execute as seguintes queries SQL no SQL Editor do Supabase para criar as tabelas principais:
+
+```sql
+-- Tabela de perfis de usuários
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE REFERENCES auth.users ON DELETE CASCADE,
+  full_name TEXT,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de grupos
+CREATE TABLE groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  color TEXT,
+  created_by UUID REFERENCES auth.users ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de membros dos grupos
+CREATE TABLE group_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID REFERENCES groups ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  is_admin BOOLEAN DEFAULT false,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(group_id, user_id)
+);
+
+-- Tabela de transações
+CREATE TABLE transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  amount NUMERIC(10, 2) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  category TEXT NOT NULL,
+  date DATE DEFAULT CURRENT_DATE,
+  group_id UUID REFERENCES groups ON DELETE SET NULL,
+  is_fixed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de investimentos
+CREATE TABLE investments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount NUMERIC(10, 2) NOT NULL,
+  current_value NUMERIC(10, 2) NOT NULL,
+  quantity NUMERIC(10, 4),
+  unit_price NUMERIC(10, 4),
+  maturity_date DATE,
+  group_id UUID REFERENCES groups ON DELETE SET NULL,
+  goal_id UUID REFERENCES investment_goals ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de metas de investimento
+CREATE TABLE investment_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  target_amount NUMERIC(10, 2) NOT NULL,
+  current_amount NUMERIC(10, 2) DEFAULT 0,
+  target_date DATE,
+  color TEXT,
+  priority INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de lembretes
+CREATE TABLE reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  transaction_id UUID REFERENCES transactions ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  reminder_date TIMESTAMPTZ NOT NULL,
+  is_completed BOOLEAN DEFAULT false,
+  is_notified BOOLEAN DEFAULT false,
+  notification_sent_at TIMESTAMPTZ,
+  repeat_type TEXT DEFAULT 'none',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de inscrições para push notifications
+CREATE TABLE push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### 🔒 2. Políticas de Segurança RLS (Row Level Security)
+
+Ative o RLS em todas as tabelas e configure as políticas:
+
+```sql
+-- Ativar RLS em todas as tabelas
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE investments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE investment_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Políticas para profiles
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- Políticas para groups
+CREATE POLICY "Users can view groups they belong to" ON groups
+  FOR SELECT USING (
+    auth.uid() = created_by OR
+    EXISTS (
+      SELECT 1 FROM group_members
+      WHERE group_id = groups.id AND user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can create groups" ON groups
+  FOR INSERT WITH CHECK (auth.uid() = created_by);
+
+CREATE POLICY "Only creators can update groups" ON groups
+  FOR UPDATE USING (auth.uid() = created_by);
+
+CREATE POLICY "Only creators can delete groups" ON groups
+  FOR DELETE USING (auth.uid() = created_by);
+
+-- Políticas para group_members
+CREATE POLICY "Members can view group members" ON group_members
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM group_members gm
+      WHERE gm.group_id = group_members.group_id
+      AND gm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Group creators can manage members" ON group_members
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM groups
+      WHERE id = group_members.group_id
+      AND created_by = auth.uid()
+    )
+  );
+
+-- Políticas para transactions
+CREATE POLICY "Users can view own and group transactions" ON transactions
+  FOR SELECT USING (
+    user_id = auth.uid() OR
+    (group_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM group_members
+      WHERE group_id = transactions.group_id
+      AND user_id = auth.uid()
+    ))
+  );
+
+CREATE POLICY "Users can create own transactions" ON transactions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own transactions" ON transactions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own transactions" ON transactions
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Políticas similares para as demais tabelas...
+```
+
+#### ⚙️ 3. Funções Auxiliares
+
+Crie funções úteis para operações complexas:
+
+```sql
+-- Função para verificar se usuário é criador do grupo
+CREATE OR REPLACE FUNCTION is_group_creator(_group_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM groups
+    WHERE id = _group_id
+    AND created_by = auth.uid()
+  );
+$$ LANGUAGE SQL SECURITY DEFINER;
+
+-- Função para verificar se usuário é membro do grupo
+CREATE OR REPLACE FUNCTION is_group_member(_group_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM group_members
+    WHERE group_id = _group_id
+    AND user_id = auth.uid()
+  );
+$$ LANGUAGE SQL SECURITY DEFINER;
+
+-- Função para atualizar current_amount nas metas
+CREATE OR REPLACE FUNCTION update_goal_current_amount()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
+    UPDATE investment_goals
+    SET current_amount = (
+      SELECT COALESCE(SUM(current_value), 0)
+      FROM investments
+      WHERE goal_id = NEW.goal_id
+    ),
+    updated_at = NOW()
+    WHERE id = NEW.goal_id;
+  END IF;
+
+  IF TG_OP = 'DELETE' OR TG_OP = 'UPDATE' THEN
+    UPDATE investment_goals
+    SET current_amount = (
+      SELECT COALESCE(SUM(current_value), 0)
+      FROM investments
+      WHERE goal_id = OLD.goal_id
+    ),
+    updated_at = NOW()
+    WHERE id = OLD.goal_id;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+#### 🔄 4. Triggers
+
+Configure triggers para automações:
+
+```sql
+-- Trigger para criar perfil automaticamente
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, full_name)
+  VALUES (NEW.id, NEW.raw_user_meta_data->>'full_name');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- Trigger para atualizar metas de investimento
+CREATE TRIGGER update_goal_on_investment_change
+  AFTER INSERT OR UPDATE OR DELETE ON investments
+  FOR EACH ROW
+  EXECUTE FUNCTION update_goal_current_amount();
+
+-- Trigger para adicionar criador como admin do grupo
+CREATE OR REPLACE FUNCTION add_creator_as_admin()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO group_members (group_id, user_id, is_admin)
+  VALUES (NEW.id, NEW.created_by, true);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER add_creator_to_group
+  AFTER INSERT ON groups
+  FOR EACH ROW EXECUTE FUNCTION add_creator_as_admin();
+```
+
+#### ⏰ 5. Configuração de Edge Functions e Cron Jobs
+
+Para notificações push e tarefas agendadas:
+
+##### a) Crie a Edge Function para verificar lembretes:
+
+No diretório `supabase/functions/check-reminders/index.ts`:
+
+```typescript
+// Veja o arquivo completo no projeto
+// Esta função verifica lembretes pendentes e envia push notifications
+```
+
+##### b) Configure o Cron Job no Supabase:
+
+```sql
+-- Ativa a extensão pg_cron se ainda não estiver ativa
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Cria o job para verificar lembretes a cada 5 minutos
+SELECT cron.schedule(
+  'check-reminders', -- nome do job
+  '*/5 * * * *', -- a cada 5 minutos
+  $$
+    SELECT net.http_post(
+      url:='https://seu-projeto.supabase.co/functions/v1/check-reminders',
+      headers:=jsonb_build_object(
+        'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key'),
+        'Content-Type', 'application/json'
+      ),
+      body:=jsonb_build_object('time', now())
+    );
+  $$
+);
+```
+
+#### 🔑 6. Configuração de Autenticação
+
+No painel do Supabase:
+
+1. **Email/Senha**: Ative em Authentication > Providers
+2. **Email Templates**: Personalize os templates em português
+3. **URL Configuration**: Configure as URLs de redirecionamento:
+   - Site URL: `https://seu-dominio.com`
+   - Redirect URLs: `https://seu-dominio.com/auth/callback`
+
+#### 🚀 7. Configuração para PWA e Push Notifications
+
+1. **Gere as chaves VAPID** para push notifications:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+2. **Configure os secrets no Supabase**:
+
+```bash
+supabase secrets set VAPID_PUBLIC_KEY=sua_chave_publica
+supabase secrets set VAPID_PRIVATE_KEY=sua_chave_privada
+```
+
+3. **Configure o domínio permitido** para Service Workers nas configurações do projeto
+
+#### 📝 8. Migrations e Versionamento
+
+Mantenha suas migrations organizadas:
+
+```bash
+# Criar nova migration
+supabase migration new nome_da_migration
+
+# Aplicar migrations localmente
+supabase db push
+
+# Aplicar em produção
+supabase db push --db-url postgresql://...
+```
+
+#### ✅ 9. Checklist de Configuração
+
+- [ ] Todas as tabelas criadas
+- [ ] RLS ativado em todas as tabelas
+- [ ] Políticas RLS configuradas
+- [ ] Funções auxiliares criadas
+- [ ] Triggers configurados
+- [ ] Edge Functions deployadas
+- [ ] Cron jobs agendados
+- [ ] Autenticação configurada
+- [ ] Chaves VAPID geradas e configuradas
+- [ ] Variáveis de ambiente configuradas no `.env`
+
+Com todas essas configurações, seu Zeni Wallet estará pronto para funcionar com segurança total e todas as funcionalidades habilitadas!
 
 ### 🐛 Reportando Bugs
 
