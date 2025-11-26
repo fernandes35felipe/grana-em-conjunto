@@ -3,8 +3,8 @@ import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Calendar 
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
-import { AddEventDialog } from "@/components/dialogs/AddEventDialog"; // Novo
-import { EventDetailsModal } from "@/components/transactions/EventDetailsModal"; // Novo
+import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
+import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ interface Transaction {
   category: string;
   date: string;
   group_id: string | null;
-  event_id: string | null; // Novo
+  event_id: string | null;
   group_name?: string;
   is_fixed: boolean;
   is_recurring: boolean;
@@ -46,7 +46,8 @@ interface Event {
   name: string;
   description: string;
   date: string;
-  totalAmount?: number; // Calculado no frontend
+  totalAmount?: number;
+  // Calculado no frontend
 }
 
 type DisplayItem = { kind: "transaction"; data: Transaction } | { kind: "event"; data: Event };
@@ -88,13 +89,8 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
+      // Carrega TODAS as transações do período, inclusive as que estão dentro de eventos
       let query = supabase.from("transactions").select(`*, groups!left (name)`).order("date", { ascending: false });
-
-      // Aplica filtro de data apenas se não tiver event_id (transações de eventos carregamos todas para somar correto, ou filtramos depois)
-      // Nota: Para simplificar a visualização, vamos carregar tudo do período para a lista principal
-      // e para eventos, talvez precisemos carregar todas do evento independente da data?
-      // Por simplicidade, vamos carregar transações do período. Se o evento for antigo mas tiver transação nova, ele aparece?
-      // Vamos carregar TUDO do período selecionado.
 
       if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
@@ -128,7 +124,6 @@ const Transactions = () => {
   const loadEvents = async () => {
     try {
       // Carrega eventos que ocorreram neste período (data de referência)
-      // OU eventos que têm transações neste período? Vamos pela data de referência do evento por enquanto.
       let query = supabase
         .from("events" as any)
         .select("*")
@@ -154,6 +149,7 @@ const Transactions = () => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -172,14 +168,12 @@ const Transactions = () => {
 
   // --- Lógica de Mesclagem e Exibição ---
 
-  // 1. Calcular totais dos eventos baseados nas transações carregadas (ou buscar totais reais do banco se preferir)
-  // Estratégia: Vamos buscar o total REAL de cada evento carregado, independente do filtro de data da transação
-  // Para a UI ficar rápida, vamos fazer um fetch separado de somatórios para os eventos listados
+  // 1. Calcular totais dos eventos para exibição no CARD DO EVENTO (Lista)
   useEffect(() => {
     if (events.length > 0) {
       updateEventTotals();
     }
-  }, [events.length]); // Atualiza quando a lista de eventos muda
+  }, [events.length]);
 
   const updateEventTotals = async () => {
     const eventIds = events.map((e) => e.id);
@@ -198,18 +192,18 @@ const Transactions = () => {
     }
   };
 
-  // 2. Preparar lista de exibição
+  // 2. Preparar lista de exibição (Visual apenas)
   const displayList = useMemo(() => {
     const list: DisplayItem[] = [];
 
-    // Adiciona transações que NÃO têm event_id (transações soltas)
+    // Adiciona transações que NÃO têm event_id (transações soltas) na lista principal
     transactions.forEach((t) => {
       if (!t.event_id) {
         list.push({ kind: "transaction", data: t });
       }
     });
 
-    // Adiciona os eventos
+    // Adiciona os eventos na lista principal
     events.forEach((e) => {
       list.push({ kind: "event", data: e });
     });
@@ -229,7 +223,6 @@ const Transactions = () => {
         } else {
           // Filtros para eventos
           const matchesSearch = item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
-          // Evento aparece independente de filtro de categoria/tipo por enquanto, ou pode ser refinado
           return matchesSearch;
         }
       })
@@ -240,25 +233,24 @@ const Transactions = () => {
       });
   }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup]);
 
-  // Cálculos de Totais para o Header (considerando apenas o que está visível ou tudo?)
-  // Geralmente dashboard soma tudo. Aqui vamos somar o que está filtrado na lista "solta" + totais dos eventos?
-  // Atenção: Se somarmos eventos + transações, e as transações do evento não estão na lista, ok.
-  // Mas o filtro de data pegou transações "soltas" dentro da data e eventos dentro da data.
+  // --- CÁLCULO DE TOTAIS CORRIGIDO ---
+  // Agora usamos a lista 'transactions' bruta (que contém tudo que ocorreu no mês)
+  // ao invés de usar 'displayList' (que contém objetos de Evento com totais acumulados)
 
-  const totalIncome = displayList.reduce((acc, item) => {
-    if (item.kind === "transaction" && item.data.type === "income") return acc + item.data.amount;
-    if (item.kind === "event" && (item.data.totalAmount || 0) > 0) return acc + (item.data.totalAmount || 0);
+  const totalIncome = transactions.reduce((acc, t) => {
+    if (t.type === "income") return acc + t.amount;
     return acc;
   }, 0);
 
-  const totalExpense = displayList.reduce((acc, item) => {
-    if (item.kind === "transaction" && item.data.type === "expense") return acc + Math.abs(item.data.amount);
-    if (item.kind === "event" && (item.data.totalAmount || 0) < 0) return acc + Math.abs(item.data.totalAmount || 0);
+  const totalExpense = transactions.reduce((acc, t) => {
+    if (t.type === "expense") return acc + Math.abs(t.amount);
     return acc;
   }, 0);
 
   const balance = totalIncome - totalExpense;
-  const categories = Array.from(new Set(transactions.map((t) => t.category)));
+
+  // Filtra categorias vazias para evitar erro no Select do Shadcn
+  const categories = Array.from(new Set(transactions.map((t) => t.category))).filter((cat) => cat && cat.trim() !== "");
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -276,7 +268,7 @@ const Transactions = () => {
             <p className="text-muted-foreground">Gerencie suas entradas, saídas e eventos</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <AddEventDialog onSuccess={loadData} /> {/* Botão Novo de Evento */}
+            <AddEventDialog onSuccess={loadData} />
             <AddTransactionDialog
               type="income"
               onSuccess={loadData}
@@ -298,7 +290,6 @@ const Transactions = () => {
           </div>
         </div>
 
-        {/* Cards de Totais e Filtros mantidos iguais... */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -323,6 +314,7 @@ const Transactions = () => {
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
                 </Select>
+
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
@@ -336,6 +328,7 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
+
                 <Select value={filterGroup} onValueChange={setFilterGroup}>
                   <SelectTrigger>
                     <SelectValue placeholder="Grupo" />
@@ -528,7 +521,8 @@ const Transactions = () => {
             eventName={selectedEvent.name}
             eventDate={selectedEvent.date}
             onUpdate={() => {
-              loadData(); // Recarrega lista principal ao mudar algo no modal
+              loadData();
+              // Recarrega lista principal ao mudar algo no modal
               updateEventTotals();
             }}
           />
