@@ -11,7 +11,6 @@ export default defineConfig(() => ({
   plugins: [
     react(),
     VitePWA({
-      // Estratégia para usar seu arquivo personalizado
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",
@@ -52,10 +51,9 @@ export default defineConfig(() => ({
         ],
       },
 
-      // Configurações vitais para desenvolvimento
       devOptions: {
         enabled: true,
-        type: "module", // Importante para TypeScript no SW
+        type: "module",
         navigateFallback: "index.html",
       },
     }),

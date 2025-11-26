@@ -42,4 +42,11 @@ export {
   UserMinus,
   Bell,
   Layers,
+  User,
+  Moon,
+  Sun,
+  Laptop,
+  Lock,
+  Mail,
+  Camera,
 } from "lucide-react";

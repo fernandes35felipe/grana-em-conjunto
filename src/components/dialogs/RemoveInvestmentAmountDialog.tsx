@@ -1,15 +1,12 @@
-// src/components/dialogs/RemoveInvestmentAmountDialog.tsx
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; // Adicionado
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MinusCircle } from "@/lib/icons";
 import { format } from "@/lib/date";
-import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 // Usaremos a interface AggregatedInvestment para tipar o investimento alvo
 interface AggregatedInvestment {
@@ -21,6 +18,7 @@ interface AggregatedInvestment {
   averagePrice: number | null;
   firstInvestedAt: string;
   recordIds: string[];
+  goalIds: (string | null)[]; // Adicionado para saber quais metas estão vinculadas
 }
 
 interface RemoveInvestmentAmountDialogProps {
@@ -33,10 +31,9 @@ interface RemoveInvestmentAmountDialogProps {
 export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSuccess }: RemoveInvestmentAmountDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [amountToRemove, setAmountToRemove] = useState("");
-  const [removalDate, setRemovalDate] = useState(format(new Date(), "yyyy-MM-dd")); // Novo
+  const [removalDate, setRemovalDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const { toast } = useToast();
 
-  // Reset form when dialog opens or investment changes
   useEffect(() => {
     if (isOpen) {
       setAmountToRemove("");
@@ -46,6 +43,7 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!investment || !amountToRemove) {
       toast({
         title: "Erro",
@@ -80,22 +78,37 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) throw new Error("Usuário não autenticado");
+
+      // Tenta encontrar o goal_id mais recente associado a este grupo de investimentos
+      // Assume-se que a retirada afeta a meta associada ao último aporte, ou a mais comum
+      const associatedGoalId = investment.goalIds.find((id) => id !== null) || null;
 
       // Criar um NOVO registro com valor NEGATIVO
       const { error } = await supabase.from("investments").insert({
         user_id: user.id,
-        name: investment.name, // Mesmo nome
-        type: investment.type, // Mesmo tipo
+        name: investment.name,
+        type: investment.type,
         amount: -removalAmount, // Valor negativo
         current_value: -removalAmount, // Valor atual negativo também
-        quantity: null, // Quantidade nula para simples remoção de valor
-        unit_price: null, // Preço unitário nulo
-        created_at: new Date(removalDate + "T00:00:00").toISOString(), // Usa a data selecionada
-        // maturity_date e group_id podem ser nulos aqui
+        quantity: null,
+        unit_price: null,
+        created_at: new Date(removalDate + "T00:00:00").toISOString(),
+        goal_id: associatedGoalId, // Mantém o vínculo com a meta para histórico
       });
 
       if (error) throw error;
+
+      // Atualizar a Meta (subtrair valor)
+      if (associatedGoalId) {
+        const { data: goalData } = await supabase.from("investment_goals").select("current_amount").eq("id", associatedGoalId).single();
+
+        if (goalData) {
+          const newGoalAmount = (goalData.current_amount || 0) - removalAmount;
+          await supabase.from("investment_goals").update({ current_amount: newGoalAmount }).eq("id", associatedGoalId);
+        }
+      }
 
       toast({
         title: "Sucesso",
@@ -103,8 +116,9 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
           investment.name
         }!`,
       });
-      onClose(); // Fecha o modal
-      onSuccess?.(); // Recarrega os dados na página
+
+      onClose();
+      onSuccess?.();
     } catch (error) {
       console.error("Erro ao remover valor do investimento:", error);
       toast({
@@ -127,7 +141,7 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
             <MinusCircle className="h-5 w-5 text-destructive" />
             Remover Valor do Investimento
           </DialogTitle>
-          <DialogDescription>Remova um valor específico de "{investment.name}". Isso criará um registro negativo.</DialogDescription>
+          <DialogDescription>Remova um valor específico de "{investment.name}". Isso criará um registro de saída.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -164,12 +178,7 @@ export const RemoveInvestmentAmountDialog = ({ investment, isOpen, onClose, onSu
             <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              variant="destructive" // Usar variante destrutiva para ação de remoção
-              className="flex-1"
-              disabled={loading}
-            >
+            <Button type="submit" variant="destructive" className="flex-1" disabled={loading}>
               {loading ? "Removendo..." : "Confirmar Remoção"}
             </Button>
           </div>

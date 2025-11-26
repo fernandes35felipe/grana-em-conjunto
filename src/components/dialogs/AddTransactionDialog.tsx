@@ -37,7 +37,7 @@ interface AddTransactionDialogProps {
   type: "income" | "expense";
   trigger?: React.ReactNode;
   onSuccess?: () => void;
-  eventId?: string; // Adicionado: ID do evento opcional
+  eventId?: string;
 }
 
 interface TransactionFormData {
@@ -111,7 +111,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
 
   useEffect(() => {
     if (open && !eventId) {
-      // Só carrega grupos se não for um evento
       loadGroups();
     }
   }, [open, eventId]);
@@ -180,7 +179,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
         group_id: values.group_id === "personal" ? null : sanitizeUUID(values.group_id),
         is_recurring: Boolean(values.is_recurring),
         is_fixed: Boolean(values.is_fixed),
-        event_id: eventId ? sanitizeUUID(eventId) : null, // Vincula ao evento se existir
+        event_id: eventId ? sanitizeUUID(eventId) : null,
       };
 
       const validationErrors = validateTransactionData(sanitizedData);
@@ -220,7 +219,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
               is_fixed: sanitizedData.is_fixed,
               recurrence_id: recurrenceId,
               recurrence_count: recurrenceCount,
-              event_id: sanitizedData.event_id, // Campo novo
+              event_id: sanitizedData.event_id,
             });
           }
 

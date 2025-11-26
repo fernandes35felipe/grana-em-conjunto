@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell } from "lucide-react";
+import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +16,7 @@ const navigation = [
   { name: "Investimentos", href: "/investments", icon: TrendingUp },
   { name: "Grupos", href: "/groups", icon: Users },
   { name: "Lembretes", href: "/reminders", icon: Bell },
+  { name: "Meu Perfil", href: "/profile", icon: User },
   { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
 ];
 

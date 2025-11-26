@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { DollarSign, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button"; // Adicionado Button
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -16,14 +16,14 @@ interface FixedTransaction {
   recurrence_id: string;
 }
 
-const ITEMS_PER_PAGE = 5; // Limite de itens por página
+const ITEMS_PER_PAGE = 5;
 
 export const FixedBalanceCard = () => {
   const [fixedIncome, setFixedIncome] = useState<FixedTransaction[]>([]);
   const [fixedExpenses, setFixedExpenses] = useState<FixedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [incomePage, setIncomePage] = useState(1); // Estado para página de receitas
-  const [expensePage, setExpensePage] = useState(1); // Estado para página de despesas
+  const [incomePage, setIncomePage] = useState(1);
+  const [expensePage, setExpensePage] = useState(1);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -42,14 +42,12 @@ export const FixedBalanceCard = () => {
         .select("id, description, amount, type, category, recurrence_id")
         .eq("user_id", user.id)
         .eq("is_fixed", true)
-        // Ordenar aqui pode ajudar na consistência da paginação
-        .order("description", { ascending: true }); // Ordenando por descrição
+        .order("description", { ascending: true });
 
       if (error) throw error;
 
       const uniqueTransactions = new Map<string, FixedTransaction>();
       data?.forEach((t) => {
-        // Garantir que amount seja sempre number
         const amount = typeof t.amount === "number" ? t.amount : parseFloat(t.amount || "0");
         if (!uniqueTransactions.has(t.recurrence_id)) {
           uniqueTransactions.set(t.recurrence_id, {
@@ -81,20 +79,16 @@ export const FixedBalanceCard = () => {
     }
   };
 
-  // Cálculos Totais (não mudam com a paginação)
   const totalFixedIncome = fixedIncome.reduce((sum, t) => sum + t.amount, 0);
   const totalFixedExpenses = Math.abs(fixedExpenses.reduce((sum, t) => sum + t.amount, 0));
   const fixedBalance = totalFixedIncome - totalFixedExpenses;
 
-  // Cálculos para Paginação de Receitas
   const totalIncomePages = Math.ceil(fixedIncome.length / ITEMS_PER_PAGE);
   const paginatedIncome = fixedIncome.slice((incomePage - 1) * ITEMS_PER_PAGE, incomePage * ITEMS_PER_PAGE);
 
-  // Cálculos para Paginação de Despesas
   const totalExpensePages = Math.ceil(fixedExpenses.length / ITEMS_PER_PAGE);
   const paginatedExpenses = fixedExpenses.slice((expensePage - 1) * ITEMS_PER_PAGE, expensePage * ITEMS_PER_PAGE);
 
-  // Funções de Navegação
   const handlePrevIncomePage = () => setIncomePage((prev) => Math.max(prev - 1, 1));
   const handleNextIncomePage = () => setIncomePage((prev) => Math.min(prev + 1, totalIncomePages));
   const handlePrevExpensePage = () => setExpensePage((prev) => Math.max(prev - 1, 1));
@@ -144,7 +138,6 @@ export const FixedBalanceCard = () => {
             </div>
             <div className="space-y-2 min-h-[180px]">
               {" "}
-              {/* Altura mínima para evitar colapso */}
               {paginatedIncome.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-2">Nenhuma receita fixa cadastrada</p>
               ) : (
@@ -169,7 +162,6 @@ export const FixedBalanceCard = () => {
                 ))
               )}
             </div>
-            {/* Paginação Receitas */}
             {totalIncomePages > 1 && (
               <div className="flex items-center justify-end gap-2 mt-3">
                 <span className="text-xs text-muted-foreground">
@@ -191,7 +183,6 @@ export const FixedBalanceCard = () => {
             )}
           </div>
 
-          {/* Despesas Fixas */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -208,7 +199,6 @@ export const FixedBalanceCard = () => {
             </div>
             <div className="space-y-2 min-h-[180px]">
               {" "}
-              {/* Altura mínima */}
               {paginatedExpenses.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa fixa cadastrada</p>
               ) : (
@@ -232,7 +222,6 @@ export const FixedBalanceCard = () => {
                 ))
               )}
             </div>
-            {/* Paginação Despesas */}
             {totalExpensePages > 1 && (
               <div className="flex items-center justify-end gap-2 mt-3">
                 <span className="text-xs text-muted-foreground">
@@ -255,7 +244,6 @@ export const FixedBalanceCard = () => {
           </div>
         </div>
 
-        {/* Balanço Total */}
         <div className="pt-4 border-t">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold">Balanço Mensal Fixo</h4>

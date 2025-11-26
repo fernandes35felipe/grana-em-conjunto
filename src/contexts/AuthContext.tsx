@@ -11,6 +11,15 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: any }>;
+  updatePassword: (password: string) => Promise<{ error: any }>;
+  // Atualizado para aceitar avatar_url
+  updateProfile: (data: {
+    full_name?: string;
+    age?: number | null;
+    gender?: string;
+    avatar_url?: string | null;
+  }) => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,6 +54,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         toast({
           title: "Perfil atualizado!",
           description: "Suas informações foram atualizadas.",
+        });
+      }
+
+      if (event === "PASSWORD_RECOVERY") {
+        toast({
+          title: "Recuperação de senha",
+          description: "Você entrou em modo de recuperação. Vá em 'Meu Perfil' para definir uma nova senha.",
         });
       }
     });
@@ -93,7 +109,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       toast({
         title: "Cadastro realizado!",
-        description: "Enviamos um email de confirmação. Verifique sua caixa de entrada e spam.",
+        description: "Se o envio de email estiver ativo, verifique sua caixa de entrada para confirmar.",
       });
 
       return { error: null };
@@ -137,16 +153,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return { error };
       }
 
-      if (data?.user && !data.user.email_confirmed_at) {
-        await supabase.auth.signOut();
-        toast({
-          title: "Email não confirmado",
-          description: "Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.",
-          variant: "destructive",
-        });
-        return { error: { message: "Email não confirmado" } };
-      }
-
       toast({
         title: "Login realizado!",
         description: "Bem-vindo ao sistema.",
@@ -181,6 +187,81 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      const redirectTo = `${window.location.origin}/profile`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Email enviado",
+        description: "Verifique seu email para o link de recuperação de senha.",
+      });
+      return { error: null };
+    } catch (error: any) {
+      toast({
+        title: "Erro ao recuperar",
+        description: error.message || "Não foi possível enviar o email.",
+        variant: "destructive",
+      });
+      return { error };
+    }
+  };
+
+  const updatePassword = async (password: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Sua senha foi alterada com sucesso.",
+      });
+      return { error: null };
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message,
+        variant: "destructive",
+      });
+      return { error };
+    }
+  };
+
+  // Função corrigida para usar UPSERT e garantir que o perfil seja salvo
+  const updateProfile = async (data: { full_name?: string; age?: number | null; gender?: string; avatar_url?: string | null }) => {
+    if (!user) return { error: "Usuário não logado" };
+
+    try {
+      const updates = {
+        user_id: user.id,
+        ...data,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Upsert: Cria se não existir, Atualiza se existir
+      // A opção { onConflict: 'user_id' } instrui o Supabase a usar o campo user_id para resolver conflitos
+      const { error } = await supabase.from("profiles").upsert(updates, { onConflict: "user_id" });
+
+      if (error) throw error;
+
+      toast({ title: "Perfil salvo", description: "Seus dados foram atualizados." });
+
+      return { error: null };
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        title: "Erro ao atualizar",
+        description: "Não foi possível salvar os dados.",
+        variant: "destructive",
+      });
+      return { error };
+    }
+  };
+
   const value = {
     user,
     session,
@@ -188,6 +269,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     signUp,
     signIn,
     signOut,
+    resetPassword,
+    updatePassword,
+    updateProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

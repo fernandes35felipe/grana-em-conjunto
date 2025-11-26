@@ -1,73 +1,142 @@
-# Welcome to your Lovable project
+💰 Zeni Wallet
+Gerenciamento Financeiro Inteligente, Pessoal e Compartilhado.
 
-## Project info
+O Zeni Wallet é uma plataforma completa para quem busca retomar o controle de suas finanças. Mais do que apenas registrar gastos, ele permite gerenciar investimentos, dividir despesas em grupo e planejar o futuro com metas claras, tudo em uma interface moderna e acessível via navegador ou instalada como aplicativo (PWA).
 
-**URL**: https://lovable.dev/projects/359e4443-e6d5-4c85-9e60-1103eae1f09d
+👤 Para Usuários
+Por que usar o Zeni Wallet?
+Cansado de planilhas complexas ou aplicativos que só registram o passado? O Zeni Wallet foi desenhado para oferecer clareza e previsibilidade. Seja você um investidor iniciante, alguém organizando as contas de casa ou planejando uma viagem em grupo, esta é a ferramenta ideal.
 
-## How can I edit this code?
+✨ Funcionalidades Atuais
 
-There are several ways of editing your application.
+Dashboard Intuitivo: Visão geral do seu saldo, receitas, despesas e evolução patrimonial em tempo real.
 
-**Use Lovable**
+Gestão de Transações:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/359e4443-e6d5-4c85-9e60-1103eae1f09d) and start prompting.
+Categorização automática e personalizada.
 
-Changes made via Lovable will be committed automatically to this repo.
+Lançamentos Fixos: Previsibilidade do seu saldo futuro com despesas recorrentes.
 
-**Use your preferred IDE**
+Eventos: Agrupe gastos de uma viagem ou reforma para saber exatamente quanto aquele projeto custou.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Investimentos Avançados:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Controle de Ações, FIIs, Renda Fixa e Criptomoedas.
 
-Follow these steps:
+Cálculo automático de rentabilidade e preço médio.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+Definição e acompanhamento de Metas Financeiras visuais.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Grupos e Compartilhamento: Crie grupos (ex: "Casa", "Viagem") para dividir despesas com amigos ou familiares, com controle de quem pagou o quê.
 
-# Step 3: Install the necessary dependencies.
-npm i
+Lembretes Inteligentes: Receba notificações Push (no celular ou PC) para não esquecer de pagar contas ou realizar aportes.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+Modo Offline (PWA): Instale o app no seu celular e acesse seus dados mesmo sem internet.
+
+🚀 O Futuro do Zeni Wallet (Roadmap)
+Estamos trabalhando constantemente para melhorar. Confira o que vem por aí:
+
+Open Finance: Conexão automática com seus bancos para importação de extratos.
+
+IA Financeira: Insights personalizados sobre seus hábitos de consumo e sugestões de economia.
+
+Relatórios PDF: Exportação de dados para declaração de imposto de renda.
+
+Modo Escuro Aprimorado: Temas visuais totalmente personalizáveis.
+
+💻 Para Desenvolvedores
+O Zeni Wallet é um projeto Open Source construído com as tecnologias mais modernas do ecossistema React, focando em performance, segurança e escalabilidade.
+
+🛠️ Tecnologias e Ferramentas
+Frontend: React 18, TypeScript, Vite.
+
+Estilização: Tailwind CSS, Shadcn/ui (baseado em Radix UI) para componentes acessíveis.
+
+Gerenciamento de Estado & Data Fetching: TanStack Query (React Query) para cache e sincronização eficiente.
+
+Backend & Auth: Supabase (PostgreSQL, Authentication, Realtime).
+
+Segurança: Zod para validação de schemas, sanitização de inputs contra XSS/SQL Injection e Rate Limiting no client-side.
+
+PWA: vite-plugin-pwa com Service Workers customizados para suporte offline e notificações push.
+
+Gráficos: Recharts para visualização de dados.
+
+🏗️ Arquitetura do Projeto
+A estrutura de pastas segue um padrão modular:
+
+Bash
+
+src/
+├── components/ # Componentes UI (Shadcn) e funcionais (Widgets)
+│ ├── dialogs/ # Modais de criação/edição (Transações, Investimentos)
+│ ├── dashboard/ # Cards e listas específicas da home
+│ └── ui/ # Componentes base (Button, Input, Card)
+├── contexts/ # Context API (AuthContext)
+├── hooks/ # Custom Hooks (useAuth, useReminders, usePWA)
+├── pages/ # Rotas da aplicação (Dashboard, Transactions, etc.)
+├── services/ # Camada de serviço (Regras de negócio e chamadas API)
+├── utils/ # Utilitários de data, formatação e segurança
+└── integrations/ # Configuração do cliente Supabase
+⚙️ Instalação e Configuração
+Clone o repositório:
+
+Bash
+
+git clone https://github.com/seu-usuario/zeni-wallet.git
+cd zeni-wallet
+Instale as dependências:
+
+Bash
+
+npm install
+Variáveis de Ambiente: Crie um arquivo .env na raiz e configure suas credenciais do Supabase e VAPID (para notificações):
+
+Snippet de código
+
+VITE_SUPABASE_URL=sua_url_supabase
+VITE_SUPABASE_PUBLISHABLE_KEY=sua_key_anon
+VITE_VAPID_PUBLIC_KEY=sua_chave_publica_webpush
+Execute o projeto:
+
+Bash
+
 npm run dev
-```
+🐛 Reportando Bugs
+Encontrou um problema? Por favor, abra uma Issue no GitHub seguindo este modelo:
 
-**Edit a file directly in GitHub**
+Título: Descrição concisa do erro.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Passos para reproduzir: Como podemos ver o erro acontecendo?
 
-**Use GitHub Codespaces**
+Comportamento esperado vs. real.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Screenshots: Se possível, adicione imagens.
 
-## What technologies are used for this project?
+Ambiente: (Desktop/Mobile, Navegador).
 
-This project is built with:
+🤝 Como Contribuir (Pull Requests)
+Quer ajudar a evoluir o Zeni Wallet? Siga os passos:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Faça um Fork do projeto.
 
-## How can I deploy this project?
+Crie uma Branch para sua feature (git checkout -b feature/nova-funcionalidade).
 
-Simply open [Lovable](https://lovable.dev/projects/359e4443-e6d5-4c85-9e60-1103eae1f09d) and click on Share -> Publish.
+Commit suas mudanças (git commit -m 'feat: Adiciona nova funcionalidade').
 
-## Can I connect a custom domain to my Lovable project?
+Push para a Branch (git push origin feature/nova-funcionalidade).
 
-Yes, you can!
+Abra um Pull Request.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Dicas para Devs:
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+Utilize os componentes de UI existentes em src/components/ui para manter a consistência visual.
+
+Sempre use useSanitizedForm ou sanitização manual ao lidar com inputs de usuário.
+
+Para novas tabelas no banco, atualize os tipos em src/integrations/supabase/types.ts.
+
+📄 Licença
+Este projeto está sob a licença MIT. Consulte o arquivo LICENSE para mais detalhes.
+
+<p align="center">Feito com 💚 para organizar sua vida financeira.</p>

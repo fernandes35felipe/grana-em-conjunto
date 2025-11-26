@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { Target } from "@/lib/icons";
-
+import { Target } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
 
 interface InvestmentGoal {
   id: string;
@@ -24,17 +22,18 @@ interface InvestmentGoal {
 
 interface EditGoalDialogProps {
   goal: InvestmentGoal | null;
-  isOpen: boolean;
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  onClose: () => void; // Adicionado para compatibilidade
 }
 
-export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDialogProps) => {
+export const EditGoalDialog = ({ goal, open, onOpenChange, onSuccess, onClose }: EditGoalDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     target_amount: "",
-    current_amount: "",
+    current_amount: "", // Permitir edição manual do valor atual caso necessário, ou deixar readonly
     color: "blue",
     description: "",
     target_date: "",
@@ -51,6 +50,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
     { value: "pink", label: "Rosa" },
   ];
 
+  // Preenche o formulário quando a meta selecionada muda
   useEffect(() => {
     if (goal) {
       setFormData({
@@ -67,8 +67,9 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!goal) return;
 
-    if (!formData.name || !formData.target_amount || !goal) {
+    if (!formData.name || !formData.target_amount) {
       toast({
         title: "Erro",
         description: "Preencha todos os campos obrigatórios",
@@ -81,6 +82,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
 
     try {
       const targetAmount = parseFloat(formData.target_amount);
+      // Opcional: permitir editar o valor atual manualmente se houver descompasso
       const currentAmount = parseFloat(formData.current_amount);
       const priority = parseInt(formData.priority);
 
@@ -104,8 +106,9 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
         description: "Meta atualizada com sucesso!",
       });
 
-      onClose();
-      onSuccess?.();
+      onOpenChange(false);
+      onClose(); // Fecha via prop de controle do pai
+      onSuccess?.(); // Recarrega dados no pai
     } catch (error) {
       console.error("Erro ao atualizar meta:", error);
       toast({
@@ -119,14 +122,14 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-5 w-5 text-primary" />
-            Editar Meta de Investimento
+            Editar Meta
           </DialogTitle>
-          <DialogDescription>Atualize as informações da sua meta financeira.</DialogDescription>
+          <DialogDescription>Atualize as características da sua meta.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -134,7 +137,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
             <Label htmlFor="edit-name">Nome da Meta *</Label>
             <Input
               id="edit-name"
-              placeholder="Ex: Casa própria, Aposentadoria..."
+              placeholder="Ex: Casa própria..."
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               required
@@ -166,6 +169,9 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
                 placeholder="0,00"
                 value={formData.current_amount}
                 onChange={(e) => setFormData((prev) => ({ ...prev, current_amount: e.target.value }))}
+                className="bg-muted"
+                // Recomendado deixar readonly se a intenção é que apenas investimentos alterem isso,
+                // mas deixei editável caso precise corrigir erros manuais.
               />
             </div>
           </div>
@@ -188,27 +194,27 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-priority">Prioridade *</Label>
+              <Label htmlFor="edit-priority">Prioridade</Label>
               <Select value={formData.priority} onValueChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}>
                 <SelectTrigger id="edit-priority">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 - Mais Alta</SelectItem>
-                  <SelectItem value="2">2 - Alta</SelectItem>
+                  <SelectItem value="1">1 - Alta</SelectItem>
+                  <SelectItem value="2">2 - Média-Alta</SelectItem>
                   <SelectItem value="3">3 - Média</SelectItem>
                   <SelectItem value="4">4 - Baixa</SelectItem>
-                  <SelectItem value="5">5 - Mais Baixa</SelectItem>
+                  <SelectItem value="5">5 - Mínima</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-description">Descrição (opcional)</Label>
+            <Label htmlFor="edit-description">Descrição</Label>
             <Textarea
               id="edit-description"
-              placeholder="Adicione detalhes sobre esta meta..."
+              placeholder="Detalhes..."
               value={formData.description}
               onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
               rows={3}
@@ -216,7 +222,7 @@ export const EditGoalDialog = ({ goal, isOpen, onClose, onSuccess }: EditGoalDia
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-target_date">Data Alvo (opcional)</Label>
+            <Label htmlFor="edit-target_date">Data Alvo</Label>
             <Input
               id="edit-target_date"
               type="date"
