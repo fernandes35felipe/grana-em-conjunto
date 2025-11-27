@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, UserPlus, UserMinus, Shield, X } from "@/lib/icons";
-
+import { Users, UserPlus, UserMinus, Shield, Mail, Trash2, AlertTriangle } from "@/lib/icons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +11,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface GroupMember {
   id: string;
@@ -21,6 +29,13 @@ interface GroupMember {
   profiles?: {
     full_name: string | null;
   } | null;
+}
+
+interface Invite {
+  id: string;
+  email: string;
+  status: string;
+  created_at: string;
 }
 
 interface EditGroupDialogProps {
@@ -33,13 +48,17 @@ interface EditGroupDialogProps {
 export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGroupDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [groupOwnerId, setGroupOwnerId] = useState<string | null>(null); // Novo estado para saber quem é o dono
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
+  const [deleteAlertOpen, setDeleteAlertOpen] = useState(false); // Estado para confirmação de deleção
+  
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     color: "blue",
   });
   const [members, setMembers] = useState<GroupMember[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const { toast } = useToast();
 
@@ -67,6 +86,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -75,6 +95,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
       if (groupError) throw groupError;
 
+      setGroupOwnerId(groupData.created_by); // Salva o ID do criador
       setFormData({
         name: groupData.name,
         description: groupData.description || "",
@@ -102,7 +123,20 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       setMembers(membersWithProfiles);
 
       const currentMember = membersData?.find((m) => m.user_id === user.id);
-      setIsGroupAdmin(currentMember?.is_admin || groupData.created_by === user.id);
+      // Usuário é admin se tiver flag is_admin OU se for o criador do grupo
+      const isAdmin = currentMember?.is_admin || groupData.created_by === user.id;
+      setIsGroupAdmin(isAdmin);
+
+      if (isAdmin) {
+        const { data: invites } = await supabase
+          .from("group_invites")
+          .select("id, email, status, created_at")
+          .eq("group_id", groupId)
+          .eq("status", "pending");
+        
+        setPendingInvites(invites || []);
+      }
+
     } catch (error) {
       console.error("Erro ao carregar dados do grupo:", error);
       toast({
@@ -152,7 +186,6 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
         title: "Sucesso",
         description: "Grupo atualizado com sucesso!",
       });
-
       onClose();
       onSuccess?.();
     } catch (error) {
@@ -167,65 +200,43 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
     }
   };
 
-  const handleAddMember = async () => {
+  const handleInviteMember = async () => {
     if (!newMemberEmail.trim() || !groupId) return;
 
     if (!isGroupAdmin) {
       toast({
         title: "Erro",
-        description: "Apenas administradores podem adicionar membros",
+        description: "Apenas administradores podem convidar membros",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id, full_name")
-        .ilike("full_name", `%${newMemberEmail}%`)
-        .limit(1)
-        .maybeSingle();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (profileError || !profileData) {
-        toast({
-          title: "Erro",
-          description: "Usuário não encontrado",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const memberExists = members.some((m) => m.user_id === profileData.user_id);
-      if (memberExists) {
-        toast({
-          title: "Erro",
-          description: "Este usuário já é membro do grupo",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error: insertError } = await supabase.from("group_members").insert({
+      const { error } = await supabase.from("group_invites").insert({
         group_id: groupId,
-        user_id: profileData.user_id,
-        is_admin: false,
+        email: newMemberEmail.trim().toLowerCase(),
+        invited_by: user?.id,
+        status: "pending",
       });
 
-      if (insertError) throw insertError;
+      if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Membro adicionado com sucesso!",
+        description: `Convite enviado para ${newMemberEmail}`,
       });
-
       setNewMemberEmail("");
-      await loadGroupData();
+      loadGroupData();
     } catch (error) {
-      console.error("Erro ao adicionar membro:", error);
+      console.error("Erro ao enviar convite:", error);
       toast({
         title: "Erro",
-        description: "Erro ao adicionar membro. Tente novamente.",
+        description: "Erro ao enviar convite. Verifique se o email é válido ou se já existe um convite.",
         variant: "destructive",
       });
     }
@@ -233,72 +244,75 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
   const handleRemoveMember = async (memberId: string, userId: string) => {
     if (!isGroupAdmin) {
-      toast({
-        title: "Erro",
-        description: "Apenas administradores podem remover membros",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Apenas administradores podem remover membros", variant: "destructive" });
       return;
     }
 
     if (userId === currentUserId) {
-      toast({
-        title: "Erro",
-        description: "Você não pode remover a si mesmo do grupo",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Você não pode remover a si mesmo do grupo", variant: "destructive" });
       return;
+    }
+
+    // Proteção extra: Não permitir remover o dono do grupo
+    if (userId === groupOwnerId) {
+        toast({ title: "Erro", description: "Não é possível remover o dono do grupo", variant: "destructive" });
+        return;
     }
 
     try {
       const { error } = await supabase.from("group_members").delete().eq("id", memberId);
-
       if (error) throw error;
 
-      toast({
-        title: "Sucesso",
-        description: "Membro removido com sucesso!",
-      });
-
+      toast({ title: "Sucesso", description: "Membro removido com sucesso!" });
       await loadGroupData();
     } catch (error) {
       console.error("Erro ao remover membro:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao remover membro. Tente novamente.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Erro ao remover membro.", variant: "destructive" });
     }
   };
 
   const handleToggleAdmin = async (memberId: string, currentIsAdmin: boolean) => {
-    if (!isGroupAdmin) {
-      toast({
-        title: "Erro",
-        description: "Apenas administradores podem alterar permissões",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!isGroupAdmin) return;
 
     try {
       const { error } = await supabase.from("group_members").update({ is_admin: !currentIsAdmin }).eq("id", memberId);
-
       if (error) throw error;
 
       toast({
         title: "Sucesso",
         description: `Permissão ${!currentIsAdmin ? "concedida" : "removida"} com sucesso!`,
       });
-
       await loadGroupData();
     } catch (error) {
-      console.error("Erro ao alterar permissão:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao alterar permissão. Tente novamente.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Erro ao alterar permissão.", variant: "destructive" });
+    }
+  };
+
+  // --- FUNÇÃO DE EXCLUSÃO DE GRUPO ---
+  const handleDeleteGroup = async () => {
+    if (!groupId) return;
+    
+    // Verificação adicional de segurança no frontend
+    if (currentUserId !== groupOwnerId) {
+        toast({ title: "Acesso negado", description: "Apenas o criador do grupo pode excluí-lo.", variant: "destructive" });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        // Devido ao CASCADE no banco de dados, deletar o grupo deletará membros, transações e convites associados
+        const { error } = await supabase.from("groups").delete().eq("id", groupId);
+        if (error) throw error;
+
+        toast({ title: "Grupo excluído", description: "O grupo e todos os seus dados foram removidos." });
+        setDeleteAlertOpen(false);
+        onClose();
+        onSuccess?.();
+    } catch (error) {
+        console.error("Erro ao excluir grupo:", error);
+        toast({ title: "Erro", description: "Não foi possível excluir o grupo.", variant: "destructive" });
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -310,7 +324,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
             <Users className="h-5 w-5 text-primary" />
             Editar Grupo
           </DialogTitle>
-          <DialogDescription>Gerencie as informações e membros do grupo.</DialogDescription>
+          <DialogDescription>Gerencie as informações, membros e permissões do grupo.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -369,16 +383,32 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
             </div>
 
             {isGroupAdmin && (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Buscar usuário por nome..."
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddMember())}
-                />
-                <Button type="button" onClick={handleAddMember} variant="outline">
-                  <UserPlus className="h-4 w-4" />
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Email do usuário para convidar..."
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    type="email"
+                  />
+                  <Button type="button" onClick={handleInviteMember} variant="outline">
+                    <Mail className="h-4 w-4 mr-2" /> Convidar
+                  </Button>
+                </div>
+
+                {pendingInvites.length > 0 && (
+                  <div className="bg-muted/30 rounded-md p-3 text-sm">
+                    <p className="font-semibold mb-2 text-muted-foreground">Convites Pendentes:</p>
+                    <div className="space-y-2">
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="flex justify-between items-center border-b last:border-0 border-border pb-2 last:pb-0">
+                          <span>{invite.email}</span>
+                          <Badge variant="outline" className="text-[10px]">Pendente</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -397,12 +427,19 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
                           Administrador
                         </Badge>
                       )}
+                      {member.user_id === groupOwnerId && (
+                          <span className="text-[10px] text-muted-foreground ml-2">(Dono)</span>
+                      )}
                     </div>
                   </div>
 
-                  {isGroupAdmin && member.user_id !== currentUserId && (
+                  {isGroupAdmin && member.user_id !== currentUserId && member.user_id !== groupOwnerId && (
                     <div className="flex items-center gap-2">
-                      <Switch checked={member.is_admin} onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)} />
+                      <Switch 
+                        checked={member.is_admin} 
+                        onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)} 
+                        title="Alternar Administrador"
+                      />
                       <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveMember(member.id, member.user_id)}>
                         <UserMinus className="h-4 w-4 text-destructive" />
                       </Button>
@@ -421,7 +458,52 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
               {loading ? "Salvando..." : "Salvar Alterações"}
             </Button>
           </div>
+
+          {/* ZONA DE PERIGO - EXCLUSÃO DE GRUPO */}
+          {currentUserId === groupOwnerId && (
+            <div className="mt-8 pt-6 border-t border-destructive/20">
+                <div className="bg-destructive/5 p-4 rounded-md border border-destructive/20">
+                    <h4 className="text-destructive font-semibold flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-4 w-4" /> Zona de Perigo
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        Excluir este grupo apagará permanentemente todas as transações, investimentos e removerá todos os membros associados.
+                    </p>
+                    <Button 
+                        type="button" 
+                        variant="destructive" 
+                        className="w-full"
+                        onClick={() => setDeleteAlertOpen(true)}
+                    >
+                        <Trash2 className="h-4 w-4 mr-2" /> Excluir Grupo Permanentemente
+                    </Button>
+                </div>
+            </div>
+          )}
         </form>
+
+        <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Tem certeza absoluta?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Esta ação não pode ser desfeita. Isso excluirá permanentemente o grupo 
+                        <strong> {formData.name} </strong> e todos os dados associados a ele.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction 
+                        onClick={handleDeleteGroup} 
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={loading}
+                    >
+                        {loading ? "Excluindo..." : "Sim, excluir grupo"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
       </DialogContent>
     </Dialog>
   );

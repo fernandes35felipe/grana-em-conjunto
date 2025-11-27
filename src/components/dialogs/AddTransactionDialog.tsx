@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { addMonths } from "date-fns";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,6 @@ import { Separator } from "@/components/ui/separator";
 
 import { useToast } from "@/hooks/use-toast";
 import { useReminders } from "@/hooks/useReminders";
-
 import { supabase } from "@/integrations/supabase/client";
 
 import {
@@ -27,7 +25,6 @@ import {
   SECURITY_LIMITS,
   ALLOWED_CATEGORIES,
 } from "@/utils/security";
-
 import { formatDateForInput, formatDateForDatabase, formatDateTimeForDatabase } from "@/utils/date/dateutils";
 
 import type { TransactionData } from "@/utils/security/types";
@@ -38,6 +35,7 @@ interface AddTransactionDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
   eventId?: string;
+  defaultGroupId?: string;
 }
 
 interface TransactionFormData {
@@ -58,29 +56,26 @@ interface ReminderFormData {
   repeat_type: RepeatType;
 }
 
-export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddTransactionDialogProps) => {
+export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaultGroupId }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { createReminder } = useReminders();
-
   const [values, setValues] = useState<TransactionFormData>({
     description: "",
     amount: 0,
     category: "",
     date: formatDateForInput(new Date()),
-    group_id: "personal",
+    group_id: defaultGroupId || "personal",
     is_recurring: false,
     is_fixed: false,
     recurrence_count: 1,
     assigned_to: "self",
   });
-
   const [reminderData, setReminderData] = useState<ReminderFormData>({
     enabled: false,
     reminder_date: "",
     repeat_type: "none",
   });
-
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,7 +86,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
       amount: 0,
       category: "",
       date: formatDateForInput(new Date()),
-      group_id: "personal",
+      group_id: defaultGroupId || "personal",
       is_recurring: false,
       is_fixed: false,
       recurrence_count: 1,
@@ -110,10 +105,13 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
   };
 
   useEffect(() => {
-    if (open && !eventId) {
+    if (open && !eventId && !defaultGroupId) {
       loadGroups();
+    } else if (defaultGroupId && open) {
+      // Se já temos um grupo definido, carregamos os membros dele imediatamente
+      loadGroupMembers(defaultGroupId);
     }
-  }, [open, eventId]);
+  }, [open, eventId, defaultGroupId]);
 
   useEffect(() => {
     if (values.group_id && values.group_id !== "personal") {
@@ -130,7 +128,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
         .from("groups")
         .select("id, name")
         .or(`created_by.eq.${userId},id.in.(select group_id from group_members where user_id = ${userId})`);
-
       if (error) throw error;
       setGroups(data || []);
     } catch (error) {
@@ -141,7 +138,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
   const loadGroupMembers = async (groupId: string) => {
     try {
       const { data, error } = await supabase.from("group_members").select("user_id, profiles(id, full_name)").eq("group_id", groupId);
-
       if (error) throw error;
 
       const members = data
@@ -150,7 +146,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
           full_name: member.profiles?.full_name || "Sem nome",
         }))
         .filter((member) => member.id);
-
       setGroupMembers(members || []);
     } catch (error) {
       console.error("Erro ao carregar membros do grupo:", error);
@@ -162,11 +157,9 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
 
     if (isSubmitting) return;
     setIsSubmitting(true);
-
     try {
       const userId = await ensureAuthenticated();
       const amount = sanitizeAmount(values.amount);
-
       if (amount <= 0) {
         throw new Error("O valor deve ser maior que zero");
       }
@@ -188,7 +181,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
       }
 
       if (sanitizedData.group_id) {
-        const isMember = await checkGroupMembership(sanitizedData.group_id);
+        const isMember = await checkGroupMembership(userId, sanitizedData.group_id);
         if (!isMember) {
           throw new Error("Você não tem permissão para adicionar transações a este grupo");
         }
@@ -224,12 +217,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
           }
 
           const { data: insertedTransactions, error } = await supabase.from("transactions").insert(transactionsToInsert).select();
-
           if (error) throw error;
 
           if (reminderData.enabled && reminderData.reminder_date && insertedTransactions?.[0]) {
             const reminderDateTime = formatDateTimeForDatabase(reminderData.reminder_date);
-
             await createReminder(
               {
                 title: `Lembrete: ${sanitizedData.description}`,
@@ -246,12 +237,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
         },
         30
       );
-
       toast({
         title: "Sucesso",
         description: "Transação adicionada com sucesso!",
       });
-
       resetForm();
       setOpen(false);
       if (onSuccess) onSuccess();
@@ -332,8 +321,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
             </Select>
           </div>
 
-          {/* Oculta grupo se for um evento, pois eventos geralmente são "containers" próprios */}
-          {!eventId && (
+          {/* Se NÃO tiver eventId E NÃO tiver defaultGroupId, mostra a seleção de grupo */}
+          {!eventId && !defaultGroupId && (
             <div className="space-y-2">
               <Label htmlFor="group_id">Grupo</Label>
               <Select
@@ -381,7 +370,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
 
           <Separator />
 
-          {/* Desativar recorrência e fixo dentro de eventos por simplicidade inicial */}
           {!eventId && (
             <>
               <div className="flex items-center justify-between">

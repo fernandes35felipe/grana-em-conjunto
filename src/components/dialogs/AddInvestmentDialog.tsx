@@ -25,9 +25,10 @@ interface InvestmentGoal {
 interface AddInvestmentDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
+  defaultGroupId?: string; // NOVO PROP
 }
 
-export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
+export const AddInvestmentDialog = ({ trigger, onSuccess, defaultGroupId }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -38,7 +39,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     amount: "",
     quantity: "",
     unit_price: "",
-    group_id: "none",
+    group_id: defaultGroupId || "none", // Usa default se houver
     goal_id: "none",
     maturity_date: "",
   });
@@ -48,37 +49,52 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   useEffect(() => {
     if (open) {
-      loadGroups();
+      if (!defaultGroupId) {
+        loadGroups();
+      }
       loadInvestmentGoals();
     }
-  }, [open]);
+  }, [open, defaultGroupId]);
 
   const loadGroups = async () => {
-    const { data } = await supabase.from("groups").select("id, name").order("name");
-    setGroups(data || []);
+    try {
+      const { data } = await supabase.from("groups").select("id, name").order("name");
+      setGroups(data || []);
+    } catch (error) {
+      console.error("Erro grupos:", error);
+    }
   };
 
   const loadInvestmentGoals = async () => {
-    const { data } = await supabase.from("investment_goals").select("*").order("name");
-    setInvestmentGoals(data || []);
+    try {
+      const { data } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
+      setInvestmentGoals(data || []);
+    } catch (error) {
+      console.error("Erro metas:", error);
+    }
   };
 
   const handleNameBlur = async () => {
     if (!formData.name) return;
-    const { data } = await supabase
-      .from("investments")
-      .select("type, group_id, goal_id")
-      .ilike("name", formData.name)
-      .limit(1)
-      .maybeSingle();
+    try {
+      const { data } = await supabase
+        .from("investments")
+        .select("type, group_id, goal_id")
+        .ilike("name", formData.name)
+        .limit(1)
+        .maybeSingle();
 
-    if (data) {
-      setFormData((prev) => ({
-        ...prev,
-        type: prev.type || data.type,
-        group_id: prev.group_id === "none" && data.group_id ? data.group_id : prev.group_id,
-        goal_id: prev.goal_id === "none" && data.goal_id ? data.goal_id : prev.goal_id,
-      }));
+      if (data) {
+        setFormData(prev => ({
+          ...prev,
+          type: prev.type || data.type,
+          // Mantém defaultGroupId se existir, senão usa o do histórico
+          group_id: defaultGroupId ? defaultGroupId : (prev.group_id === "none" && data.group_id ? data.group_id : prev.group_id),
+          goal_id: prev.goal_id === "none" && data.goal_id ? data.goal_id : prev.goal_id,
+        }));
+      }
+    } catch (error) {
+      // Silently fail
     }
   };
 
@@ -87,9 +103,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     setLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
       let calculatedAmount = 0;
@@ -98,17 +112,23 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
       if (showQuantityPriceFields) {
         if (!formData.quantity || !formData.unit_price) {
-          throw new Error("Preencha Quantidade e Valor Unitário");
+          toast({ title: "Erro", description: "Preencha quantidade e preço", variant: "destructive" });
+          setLoading(false);
+          return;
         }
         quantity = parseFloat(formData.quantity);
         unitPrice = parseFloat(formData.unit_price);
         calculatedAmount = quantity * unitPrice;
       } else {
-        if (!formData.amount) throw new Error("Preencha o Valor Investido");
+        if (!formData.amount) {
+          toast({ title: "Erro", description: "Preencha o valor", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
         calculatedAmount = parseFloat(formData.amount);
       }
 
-      const { error: insertError } = await supabase.from("investments").insert({
+      const investmentData: any = {
         user_id: user.id,
         name: formData.name,
         type: formData.type,
@@ -119,59 +139,61 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
         group_id: formData.group_id === "none" ? null : formData.group_id,
         goal_id: formData.goal_id === "none" ? null : formData.goal_id,
         maturity_date: formData.maturity_date || null,
-      });
+      };
 
+      const { error: insertError } = await supabase.from("investments").insert(investmentData);
       if (insertError) throw insertError;
 
-      if (formData.goal_id && formData.goal_id !== "none") {
-        await recalculateGoalBalance(formData.goal_id);
+      if (investmentData.goal_id) {
+        await recalculateGoalBalance(investmentData.goal_id);
       }
 
-      toast({ title: "Sucesso", description: "Investimento adicionado!" });
-
+      toast({ title: "Sucesso", description: "Aporte realizado com sucesso!" });
+      
       setFormData({
         name: "",
         type: "",
         amount: "",
         quantity: "",
         unit_price: "",
-        group_id: "none",
+        group_id: defaultGroupId || "none", // Reseta mantendo o default
         goal_id: "none",
         maturity_date: "",
       });
       setOpen(false);
       onSuccess?.();
-    } catch (error: any) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } catch (error) {
+      console.error("Erro:", error);
+      toast({ title: "Erro", description: "Falha ao salvar", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
+  const defaultTrigger = (
+    <Button variant="outline" className="h-20 flex flex-col gap-2">
+      <PiggyBank className="h-6 w-6" />
+      <span className="text-sm">Investir</span>
+    </Button>
+  );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button variant="outline" className="h-20 flex flex-col gap-2">
-            <PiggyBank className="h-6 w-6" />
-            <span className="text-sm">Investir</span>
-          </Button>
-        )}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PiggyBank className="h-5 w-5 text-primary" />
             Novo Investimento
           </DialogTitle>
-          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
+          <DialogDescription>Adicione um novo aporte.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Nome *</Label>
+            <Label htmlFor="name">Nome do Ativo *</Label>
             <Input
               id="name"
-              placeholder="Ex: PETR4, MXRF11..."
+              placeholder="Ex: PETR4, CDB Banco X..."
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               onBlur={handleNameBlur}
@@ -187,39 +209,45 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
               </SelectTrigger>
               <SelectContent>
                 {INVESTMENT_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type}
-                  </SelectItem>
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           {showQuantityPriceFields ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantidade *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  value={formData.quantity}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
-                />
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantidade</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="1"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit_price">Preço Unitário</Label>
+                  <Input
+                    id="unit_price"
+                    type="number"
+                    step="0.01"
+                    value={formData.unit_price}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, unit_price: e.target.value }))}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="unit_price">Valor Unitário *</Label>
-                <Input
-                  id="unit_price"
-                  type="number"
-                  step="0.01"
-                  value={formData.unit_price}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, unit_price: e.target.value }))}
-                />
-              </div>
-            </div>
+              {formData.quantity && formData.unit_price && (
+                <div className="text-sm text-muted-foreground text-right">
+                  Total: R$ {(parseFloat(formData.quantity) * parseFloat(formData.unit_price)).toFixed(2)}
+                </div>
+              )}
+            </>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="amount">Valor Investido *</Label>
+              <Label htmlFor="amount">Valor do Aporte *</Label>
               <Input
                 id="amount"
                 type="number"
@@ -231,10 +259,10 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
+            <Label htmlFor="goal">Vincular a uma Meta</Label>
             <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione uma meta" />
+                <SelectValue placeholder="Selecione..." />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Nenhuma meta</SelectItem>
@@ -247,22 +275,22 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pessoal</SelectItem>
-                {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!defaultGroupId && (
+            <div className="space-y-2">
+              <Label htmlFor="group">Grupo</Label>
+              <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Pessoal</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="maturity_date">Vencimento (opcional)</Label>
@@ -274,12 +302,12 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Salvando..." : "Salvar"}
+              {loading ? "Salvando..." : "Adicionar Aporte"}
             </Button>
           </div>
         </form>

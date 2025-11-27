@@ -1,13 +1,13 @@
 # Code Merge Output
-Generated at: 2025-11-26T21:07:21.698Z
+Generated at: 2025-11-27T02:02:17.806Z
 Source path: .
-Files processed: 126
-Total lines: 15453
-Total characters: 539116
+Files processed: 128
+Total lines: 15920
+Total characters: 559062
 
 File types:
-  - tsx: 87 files (11.589 lines)
-  - ts: 29 files (2.951 lines)
+  - tsx: 88 files (11.969 lines)
+  - ts: 30 files (3.038 lines)
   - json: 6 files (208 lines)
   - js: 3 files (35 lines)
   - md: 1 files (670 lines)
@@ -28,7 +28,7 @@ Project structure & file index:
   dev-dist/
     - registerSW.js (1 lines)
   src/
-    - App.tsx (103 lines)
+    - App.tsx (113 lines)
     - main.tsx (13 lines)
     - sw.ts (146 lines)
     - vite-env.d.ts (2 lines)
@@ -46,12 +46,12 @@ Project structure & file index:
       dialogs/
         - AddEventDialog.tsx (142 lines)
         - AddGoalDialog.tsx (235 lines)
-        - AddGroupDialog.tsx (219 lines)
-        - AddInvestmentDialog.tsx (290 lines)
+        - AddGroupDialog.tsx (213 lines)
+        - AddInvestmentDialog.tsx (317 lines)
         - AddReminderDialog.tsx (140 lines)
-        - AddTransactionDialog.tsx (491 lines)
+        - AddTransactionDialog.tsx (478 lines)
         - EditGoalDialog.tsx (247 lines)
-        - EditGroupDialog.tsx (429 lines)
+        - EditGroupDialog.tsx (510 lines)
         - InvestmentAdjustmentDialog.tsx (209 lines)
         - InvestmentDetailsModal.tsx (204 lines)
         - ManageInvestmentDialog.tsx (207 lines)
@@ -59,7 +59,7 @@ Project structure & file index:
       filters/
         - DateFilter.tsx (145 lines)
       groups/
-        - GroupDetailsModal.tsx (308 lines)
+        - GroupDetailsModal.tsx (341 lines)
       layout/
         - DashboardLayout.tsx (43 lines)
         - Sidebar.tsx (79 lines)
@@ -131,21 +131,22 @@ Project structure & file index:
     integrations/
       supabase/
         - client.ts (14 lines)
-        - types.ts (285 lines)
+        - types.ts (304 lines)
     lib/
       - date.ts (17 lines)
-      - icons.ts (53 lines)
+      - icons.ts (54 lines)
       - utils.ts (7 lines)
     pages/
       - Auth.tsx (292 lines)
       - Dashboard.tsx (162 lines)
-      - Groups.tsx (358 lines)
+      - Groups.tsx (452 lines)
       - Index.tsx (120 lines)
       - Investments.tsx (522 lines)
+      - JoinGroup.tsx (160 lines)
       - NotFound.tsx (28 lines)
       - Profile.tsx (267 lines)
       - Reminders.tsx (20 lines)
-      - Transactions.tsx (542 lines)
+      - Transactions.tsx (536 lines)
     utils/
       date/
         - dateutils.ts (70 lines)
@@ -168,6 +169,8 @@ Project structure & file index:
     functions/
       check-reminders/
         - index.ts (131 lines)
+      send-invite-email/
+        - index.ts (67 lines)
 ================================================================================
 
 STARTOFFILE: components.json
@@ -1025,7 +1028,6 @@ STARTOFFILE: src\App.tsx
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -1040,6 +1042,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Investments = lazy(() => import("./pages/Investments"));
 const Groups = lazy(() => import("./pages/Groups"));
+const JoinGroup = lazy(() => import("./pages/JoinGroup")); // NOVA PÁGINA
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Reminder = lazy(() => import("./pages/Reminders"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -1066,6 +1069,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
+              
+              {/* ROTA DE PROTEÇÃO */}
               <Route
                 path="/dashboard"
                 element={
@@ -1098,6 +1103,15 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              
+              {/* NOVA ROTA PARA ENTRAR NO GRUPO VIA LINK */}
+              <Route
+                path="/groups/join/:inviteId"
+                element={
+                    <JoinGroup />
+                }
+              />
+
               <Route
                 path="/reminders"
                 element={
@@ -1124,7 +1138,6 @@ const App = () => (
 );
 
 export default App;
-
 ----------------------------------------
 ENDOFFILE: src\App.tsx
 
@@ -2044,21 +2057,16 @@ ENDOFFILE: src\components\dialogs\AddGoalDialog.tsx
 STARTOFFILE: src\components\dialogs\AddGroupDialog.tsx
 ----------------------------------------
 import { useState } from "react";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
 import { useToast } from "@/hooks/use-toast";
 import { useSanitizedForm } from "@/hooks/useSanitizedForm";
-
 import { supabase } from "@/integrations/supabase/client";
-
 import { sanitizeInput, sanitizeColor, validateGroupData, ensureAuthenticated, withRateLimit, SECURITY_LIMITS } from "@/utils/security";
-
 import type { GroupData } from "@/utils/security/types";
 
 interface AddGroupDialogProps {
@@ -2132,7 +2140,6 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
   const submitGroup = async (values: FormData) => {
     try {
       const userId = await ensureAuthenticated();
-
       const hexColor = colorToHex[values.color || "blue"];
       const sanitizedColor = sanitizeColor(hexColor);
 
@@ -2154,6 +2161,7 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
       await withRateLimit(
         `group:${userId}`,
         async () => {
+          // 1. Cria o grupo
           const { data, error } = await supabase
             .from("groups")
             .insert({
@@ -2167,11 +2175,12 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
 
           if (error) throw error;
 
-          await supabase.from("group_members").insert({
+
+          await supabase.from("group_members").upsert({
             group_id: data.id,
             user_id: userId,
-            is_admin: true,
-          });
+            is_admin: true, // Define explicitamente como admin
+          }, { onConflict: 'group_id, user_id' });
         },
         10
       );
@@ -2191,7 +2200,6 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
         description: error instanceof Error ? error.message : "Erro ao criar grupo",
         variant: "destructive",
       });
-      throw error;
     }
   };
 
@@ -2261,7 +2269,6 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
     </Dialog>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddGroupDialog.tsx
 
@@ -2294,9 +2301,10 @@ interface InvestmentGoal {
 interface AddInvestmentDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
+  defaultGroupId?: string; // NOVO PROP
 }
 
-export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogProps) => {
+export const AddInvestmentDialog = ({ trigger, onSuccess, defaultGroupId }: AddInvestmentDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -2307,7 +2315,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     amount: "",
     quantity: "",
     unit_price: "",
-    group_id: "none",
+    group_id: defaultGroupId || "none", // Usa default se houver
     goal_id: "none",
     maturity_date: "",
   });
@@ -2317,37 +2325,52 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
   useEffect(() => {
     if (open) {
-      loadGroups();
+      if (!defaultGroupId) {
+        loadGroups();
+      }
       loadInvestmentGoals();
     }
-  }, [open]);
+  }, [open, defaultGroupId]);
 
   const loadGroups = async () => {
-    const { data } = await supabase.from("groups").select("id, name").order("name");
-    setGroups(data || []);
+    try {
+      const { data } = await supabase.from("groups").select("id, name").order("name");
+      setGroups(data || []);
+    } catch (error) {
+      console.error("Erro grupos:", error);
+    }
   };
 
   const loadInvestmentGoals = async () => {
-    const { data } = await supabase.from("investment_goals").select("*").order("name");
-    setInvestmentGoals(data || []);
+    try {
+      const { data } = await supabase.from("investment_goals").select("id, name, target_amount, current_amount").order("name");
+      setInvestmentGoals(data || []);
+    } catch (error) {
+      console.error("Erro metas:", error);
+    }
   };
 
   const handleNameBlur = async () => {
     if (!formData.name) return;
-    const { data } = await supabase
-      .from("investments")
-      .select("type, group_id, goal_id")
-      .ilike("name", formData.name)
-      .limit(1)
-      .maybeSingle();
+    try {
+      const { data } = await supabase
+        .from("investments")
+        .select("type, group_id, goal_id")
+        .ilike("name", formData.name)
+        .limit(1)
+        .maybeSingle();
 
-    if (data) {
-      setFormData((prev) => ({
-        ...prev,
-        type: prev.type || data.type,
-        group_id: prev.group_id === "none" && data.group_id ? data.group_id : prev.group_id,
-        goal_id: prev.goal_id === "none" && data.goal_id ? data.goal_id : prev.goal_id,
-      }));
+      if (data) {
+        setFormData(prev => ({
+          ...prev,
+          type: prev.type || data.type,
+          // Mantém defaultGroupId se existir, senão usa o do histórico
+          group_id: defaultGroupId ? defaultGroupId : (prev.group_id === "none" && data.group_id ? data.group_id : prev.group_id),
+          goal_id: prev.goal_id === "none" && data.goal_id ? data.goal_id : prev.goal_id,
+        }));
+      }
+    } catch (error) {
+      // Silently fail
     }
   };
 
@@ -2356,9 +2379,7 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     setLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
       let calculatedAmount = 0;
@@ -2367,17 +2388,23 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
 
       if (showQuantityPriceFields) {
         if (!formData.quantity || !formData.unit_price) {
-          throw new Error("Preencha Quantidade e Valor Unitário");
+          toast({ title: "Erro", description: "Preencha quantidade e preço", variant: "destructive" });
+          setLoading(false);
+          return;
         }
         quantity = parseFloat(formData.quantity);
         unitPrice = parseFloat(formData.unit_price);
         calculatedAmount = quantity * unitPrice;
       } else {
-        if (!formData.amount) throw new Error("Preencha o Valor Investido");
+        if (!formData.amount) {
+          toast({ title: "Erro", description: "Preencha o valor", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
         calculatedAmount = parseFloat(formData.amount);
       }
 
-      const { error: insertError } = await supabase.from("investments").insert({
+      const investmentData: any = {
         user_id: user.id,
         name: formData.name,
         type: formData.type,
@@ -2388,59 +2415,61 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
         group_id: formData.group_id === "none" ? null : formData.group_id,
         goal_id: formData.goal_id === "none" ? null : formData.goal_id,
         maturity_date: formData.maturity_date || null,
-      });
+      };
 
+      const { error: insertError } = await supabase.from("investments").insert(investmentData);
       if (insertError) throw insertError;
 
-      if (formData.goal_id && formData.goal_id !== "none") {
-        await recalculateGoalBalance(formData.goal_id);
+      if (investmentData.goal_id) {
+        await recalculateGoalBalance(investmentData.goal_id);
       }
 
-      toast({ title: "Sucesso", description: "Investimento adicionado!" });
-
+      toast({ title: "Sucesso", description: "Aporte realizado com sucesso!" });
+      
       setFormData({
         name: "",
         type: "",
         amount: "",
         quantity: "",
         unit_price: "",
-        group_id: "none",
+        group_id: defaultGroupId || "none", // Reseta mantendo o default
         goal_id: "none",
         maturity_date: "",
       });
       setOpen(false);
       onSuccess?.();
-    } catch (error: any) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } catch (error) {
+      console.error("Erro:", error);
+      toast({ title: "Erro", description: "Falha ao salvar", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
+  const defaultTrigger = (
+    <Button variant="outline" className="h-20 flex flex-col gap-2">
+      <PiggyBank className="h-6 w-6" />
+      <span className="text-sm">Investir</span>
+    </Button>
+  );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button variant="outline" className="h-20 flex flex-col gap-2">
-            <PiggyBank className="h-6 w-6" />
-            <span className="text-sm">Investir</span>
-          </Button>
-        )}
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PiggyBank className="h-5 w-5 text-primary" />
             Novo Investimento
           </DialogTitle>
-          <DialogDescription>Adicione um novo investimento ao seu portfólio.</DialogDescription>
+          <DialogDescription>Adicione um novo aporte.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Nome *</Label>
+            <Label htmlFor="name">Nome do Ativo *</Label>
             <Input
               id="name"
-              placeholder="Ex: PETR4, MXRF11..."
+              placeholder="Ex: PETR4, CDB Banco X..."
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               onBlur={handleNameBlur}
@@ -2456,39 +2485,45 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
               </SelectTrigger>
               <SelectContent>
                 {INVESTMENT_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type}
-                  </SelectItem>
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           {showQuantityPriceFields ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantidade *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  value={formData.quantity}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
-                />
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantidade</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="1"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, quantity: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit_price">Preço Unitário</Label>
+                  <Input
+                    id="unit_price"
+                    type="number"
+                    step="0.01"
+                    value={formData.unit_price}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, unit_price: e.target.value }))}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="unit_price">Valor Unitário *</Label>
-                <Input
-                  id="unit_price"
-                  type="number"
-                  step="0.01"
-                  value={formData.unit_price}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, unit_price: e.target.value }))}
-                />
-              </div>
-            </div>
+              {formData.quantity && formData.unit_price && (
+                <div className="text-sm text-muted-foreground text-right">
+                  Total: R$ {(parseFloat(formData.quantity) * parseFloat(formData.unit_price)).toFixed(2)}
+                </div>
+              )}
+            </>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="amount">Valor Investido *</Label>
+              <Label htmlFor="amount">Valor do Aporte *</Label>
               <Input
                 id="amount"
                 type="number"
@@ -2500,10 +2535,10 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="goal">Meta de Investimento (opcional)</Label>
+            <Label htmlFor="goal">Vincular a uma Meta</Label>
             <Select value={formData.goal_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, goal_id: value }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione uma meta" />
+                <SelectValue placeholder="Selecione..." />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Nenhuma meta</SelectItem>
@@ -2516,22 +2551,22 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="group">Grupo (opcional)</Label>
-            <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pessoal</SelectItem>
-                {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!defaultGroupId && (
+            <div className="space-y-2">
+              <Label htmlFor="group">Grupo</Label>
+              <Select value={formData.group_id} onValueChange={(value) => setFormData((prev) => ({ ...prev, group_id: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Pessoal</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="maturity_date">Vencimento (opcional)</Label>
@@ -2543,12 +2578,12 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Salvando..." : "Salvar"}
+              {loading ? "Salvando..." : "Adicionar Aporte"}
             </Button>
           </div>
         </form>
@@ -2556,7 +2591,6 @@ export const AddInvestmentDialog = ({ trigger, onSuccess }: AddInvestmentDialogP
     </Dialog>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddInvestmentDialog.tsx
 
@@ -2709,7 +2743,6 @@ STARTOFFILE: src\components\dialogs\AddTransactionDialog.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
 import { addMonths } from "date-fns";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2720,7 +2753,6 @@ import { Separator } from "@/components/ui/separator";
 
 import { useToast } from "@/hooks/use-toast";
 import { useReminders } from "@/hooks/useReminders";
-
 import { supabase } from "@/integrations/supabase/client";
 
 import {
@@ -2736,7 +2768,6 @@ import {
   SECURITY_LIMITS,
   ALLOWED_CATEGORIES,
 } from "@/utils/security";
-
 import { formatDateForInput, formatDateForDatabase, formatDateTimeForDatabase } from "@/utils/date/dateutils";
 
 import type { TransactionData } from "@/utils/security/types";
@@ -2747,6 +2778,7 @@ interface AddTransactionDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
   eventId?: string;
+  defaultGroupId?: string;
 }
 
 interface TransactionFormData {
@@ -2767,29 +2799,26 @@ interface ReminderFormData {
   repeat_type: RepeatType;
 }
 
-export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddTransactionDialogProps) => {
+export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaultGroupId }: AddTransactionDialogProps) => {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { createReminder } = useReminders();
-
   const [values, setValues] = useState<TransactionFormData>({
     description: "",
     amount: 0,
     category: "",
     date: formatDateForInput(new Date()),
-    group_id: "personal",
+    group_id: defaultGroupId || "personal",
     is_recurring: false,
     is_fixed: false,
     recurrence_count: 1,
     assigned_to: "self",
   });
-
   const [reminderData, setReminderData] = useState<ReminderFormData>({
     enabled: false,
     reminder_date: "",
     repeat_type: "none",
   });
-
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2800,7 +2829,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
       amount: 0,
       category: "",
       date: formatDateForInput(new Date()),
-      group_id: "personal",
+      group_id: defaultGroupId || "personal",
       is_recurring: false,
       is_fixed: false,
       recurrence_count: 1,
@@ -2819,10 +2848,13 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
   };
 
   useEffect(() => {
-    if (open && !eventId) {
+    if (open && !eventId && !defaultGroupId) {
       loadGroups();
+    } else if (defaultGroupId && open) {
+      // Se já temos um grupo definido, carregamos os membros dele imediatamente
+      loadGroupMembers(defaultGroupId);
     }
-  }, [open, eventId]);
+  }, [open, eventId, defaultGroupId]);
 
   useEffect(() => {
     if (values.group_id && values.group_id !== "personal") {
@@ -2839,7 +2871,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
         .from("groups")
         .select("id, name")
         .or(`created_by.eq.${userId},id.in.(select group_id from group_members where user_id = ${userId})`);
-
       if (error) throw error;
       setGroups(data || []);
     } catch (error) {
@@ -2850,7 +2881,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
   const loadGroupMembers = async (groupId: string) => {
     try {
       const { data, error } = await supabase.from("group_members").select("user_id, profiles(id, full_name)").eq("group_id", groupId);
-
       if (error) throw error;
 
       const members = data
@@ -2859,7 +2889,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
           full_name: member.profiles?.full_name || "Sem nome",
         }))
         .filter((member) => member.id);
-
       setGroupMembers(members || []);
     } catch (error) {
       console.error("Erro ao carregar membros do grupo:", error);
@@ -2871,11 +2900,9 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
 
     if (isSubmitting) return;
     setIsSubmitting(true);
-
     try {
       const userId = await ensureAuthenticated();
       const amount = sanitizeAmount(values.amount);
-
       if (amount <= 0) {
         throw new Error("O valor deve ser maior que zero");
       }
@@ -2933,12 +2960,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
           }
 
           const { data: insertedTransactions, error } = await supabase.from("transactions").insert(transactionsToInsert).select();
-
           if (error) throw error;
 
           if (reminderData.enabled && reminderData.reminder_date && insertedTransactions?.[0]) {
             const reminderDateTime = formatDateTimeForDatabase(reminderData.reminder_date);
-
             await createReminder(
               {
                 title: `Lembrete: ${sanitizedData.description}`,
@@ -2955,12 +2980,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
         },
         30
       );
-
       toast({
         title: "Sucesso",
         description: "Transação adicionada com sucesso!",
       });
-
       resetForm();
       setOpen(false);
       if (onSuccess) onSuccess();
@@ -3041,8 +3064,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
             </Select>
           </div>
 
-          {/* Oculta grupo se for um evento, pois eventos geralmente são "containers" próprios */}
-          {!eventId && (
+          {/* Se NÃO tiver eventId E NÃO tiver defaultGroupId, mostra a seleção de grupo */}
+          {!eventId && !defaultGroupId && (
             <div className="space-y-2">
               <Label htmlFor="group_id">Grupo</Label>
               <Select
@@ -3090,7 +3113,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
 
           <Separator />
 
-          {/* Desativar recorrência e fixo dentro de eventos por simplicidade inicial */}
           {!eventId && (
             <>
               <div className="flex items-center justify-between">
@@ -3197,7 +3219,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId }: AddT
     </Dialog>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\AddTransactionDialog.tsx
 
@@ -3456,8 +3477,7 @@ ENDOFFILE: src\components\dialogs\EditGoalDialog.tsx
 STARTOFFILE: src\components\dialogs\EditGroupDialog.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { Users, UserPlus, UserMinus, Shield, X } from "@/lib/icons";
-
+import { Users, UserPlus, UserMinus, Shield, Mail, Trash2, AlertTriangle } from "@/lib/icons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -3469,7 +3489,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeInput, sanitizeAmount, validateTransactionData, ensureAuthenticated, checkRateLimit } from "@/utils/security";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface GroupMember {
   id: string;
@@ -3478,6 +3507,13 @@ interface GroupMember {
   profiles?: {
     full_name: string | null;
   } | null;
+}
+
+interface Invite {
+  id: string;
+  email: string;
+  status: string;
+  created_at: string;
 }
 
 interface EditGroupDialogProps {
@@ -3490,13 +3526,17 @@ interface EditGroupDialogProps {
 export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGroupDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [groupOwnerId, setGroupOwnerId] = useState<string | null>(null); // Novo estado para saber quem é o dono
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
+  const [deleteAlertOpen, setDeleteAlertOpen] = useState(false); // Estado para confirmação de deleção
+  
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     color: "blue",
   });
   const [members, setMembers] = useState<GroupMember[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const { toast } = useToast();
 
@@ -3524,6 +3564,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -3532,6 +3573,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
       if (groupError) throw groupError;
 
+      setGroupOwnerId(groupData.created_by); // Salva o ID do criador
       setFormData({
         name: groupData.name,
         description: groupData.description || "",
@@ -3559,7 +3601,20 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
       setMembers(membersWithProfiles);
 
       const currentMember = membersData?.find((m) => m.user_id === user.id);
-      setIsGroupAdmin(currentMember?.is_admin || groupData.created_by === user.id);
+      // Usuário é admin se tiver flag is_admin OU se for o criador do grupo
+      const isAdmin = currentMember?.is_admin || groupData.created_by === user.id;
+      setIsGroupAdmin(isAdmin);
+
+      if (isAdmin) {
+        const { data: invites } = await supabase
+          .from("group_invites")
+          .select("id, email, status, created_at")
+          .eq("group_id", groupId)
+          .eq("status", "pending");
+        
+        setPendingInvites(invites || []);
+      }
+
     } catch (error) {
       console.error("Erro ao carregar dados do grupo:", error);
       toast({
@@ -3609,7 +3664,6 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
         title: "Sucesso",
         description: "Grupo atualizado com sucesso!",
       });
-
       onClose();
       onSuccess?.();
     } catch (error) {
@@ -3624,65 +3678,43 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
     }
   };
 
-  const handleAddMember = async () => {
+  const handleInviteMember = async () => {
     if (!newMemberEmail.trim() || !groupId) return;
 
     if (!isGroupAdmin) {
       toast({
         title: "Erro",
-        description: "Apenas administradores podem adicionar membros",
+        description: "Apenas administradores podem convidar membros",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id, full_name")
-        .ilike("full_name", `%${newMemberEmail}%`)
-        .limit(1)
-        .maybeSingle();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (profileError || !profileData) {
-        toast({
-          title: "Erro",
-          description: "Usuário não encontrado",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const memberExists = members.some((m) => m.user_id === profileData.user_id);
-      if (memberExists) {
-        toast({
-          title: "Erro",
-          description: "Este usuário já é membro do grupo",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error: insertError } = await supabase.from("group_members").insert({
+      const { error } = await supabase.from("group_invites").insert({
         group_id: groupId,
-        user_id: profileData.user_id,
-        is_admin: false,
+        email: newMemberEmail.trim().toLowerCase(),
+        invited_by: user?.id,
+        status: "pending",
       });
 
-      if (insertError) throw insertError;
+      if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Membro adicionado com sucesso!",
+        description: `Convite enviado para ${newMemberEmail}`,
       });
-
       setNewMemberEmail("");
-      await loadGroupData();
+      loadGroupData();
     } catch (error) {
-      console.error("Erro ao adicionar membro:", error);
+      console.error("Erro ao enviar convite:", error);
       toast({
         title: "Erro",
-        description: "Erro ao adicionar membro. Tente novamente.",
+        description: "Erro ao enviar convite. Verifique se o email é válido ou se já existe um convite.",
         variant: "destructive",
       });
     }
@@ -3690,72 +3722,75 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
 
   const handleRemoveMember = async (memberId: string, userId: string) => {
     if (!isGroupAdmin) {
-      toast({
-        title: "Erro",
-        description: "Apenas administradores podem remover membros",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Apenas administradores podem remover membros", variant: "destructive" });
       return;
     }
 
     if (userId === currentUserId) {
-      toast({
-        title: "Erro",
-        description: "Você não pode remover a si mesmo do grupo",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Você não pode remover a si mesmo do grupo", variant: "destructive" });
       return;
+    }
+
+    // Proteção extra: Não permitir remover o dono do grupo
+    if (userId === groupOwnerId) {
+        toast({ title: "Erro", description: "Não é possível remover o dono do grupo", variant: "destructive" });
+        return;
     }
 
     try {
       const { error } = await supabase.from("group_members").delete().eq("id", memberId);
-
       if (error) throw error;
 
-      toast({
-        title: "Sucesso",
-        description: "Membro removido com sucesso!",
-      });
-
+      toast({ title: "Sucesso", description: "Membro removido com sucesso!" });
       await loadGroupData();
     } catch (error) {
       console.error("Erro ao remover membro:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao remover membro. Tente novamente.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Erro ao remover membro.", variant: "destructive" });
     }
   };
 
   const handleToggleAdmin = async (memberId: string, currentIsAdmin: boolean) => {
-    if (!isGroupAdmin) {
-      toast({
-        title: "Erro",
-        description: "Apenas administradores podem alterar permissões",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!isGroupAdmin) return;
 
     try {
       const { error } = await supabase.from("group_members").update({ is_admin: !currentIsAdmin }).eq("id", memberId);
-
       if (error) throw error;
 
       toast({
         title: "Sucesso",
         description: `Permissão ${!currentIsAdmin ? "concedida" : "removida"} com sucesso!`,
       });
-
       await loadGroupData();
     } catch (error) {
-      console.error("Erro ao alterar permissão:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao alterar permissão. Tente novamente.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Erro ao alterar permissão.", variant: "destructive" });
+    }
+  };
+
+  // --- FUNÇÃO DE EXCLUSÃO DE GRUPO ---
+  const handleDeleteGroup = async () => {
+    if (!groupId) return;
+    
+    // Verificação adicional de segurança no frontend
+    if (currentUserId !== groupOwnerId) {
+        toast({ title: "Acesso negado", description: "Apenas o criador do grupo pode excluí-lo.", variant: "destructive" });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        // Devido ao CASCADE no banco de dados, deletar o grupo deletará membros, transações e convites associados
+        const { error } = await supabase.from("groups").delete().eq("id", groupId);
+        if (error) throw error;
+
+        toast({ title: "Grupo excluído", description: "O grupo e todos os seus dados foram removidos." });
+        setDeleteAlertOpen(false);
+        onClose();
+        onSuccess?.();
+    } catch (error) {
+        console.error("Erro ao excluir grupo:", error);
+        toast({ title: "Erro", description: "Não foi possível excluir o grupo.", variant: "destructive" });
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -3767,7 +3802,7 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
             <Users className="h-5 w-5 text-primary" />
             Editar Grupo
           </DialogTitle>
-          <DialogDescription>Gerencie as informações e membros do grupo.</DialogDescription>
+          <DialogDescription>Gerencie as informações, membros e permissões do grupo.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -3826,16 +3861,32 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
             </div>
 
             {isGroupAdmin && (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Buscar usuário por nome..."
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddMember())}
-                />
-                <Button type="button" onClick={handleAddMember} variant="outline">
-                  <UserPlus className="h-4 w-4" />
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Email do usuário para convidar..."
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    type="email"
+                  />
+                  <Button type="button" onClick={handleInviteMember} variant="outline">
+                    <Mail className="h-4 w-4 mr-2" /> Convidar
+                  </Button>
+                </div>
+
+                {pendingInvites.length > 0 && (
+                  <div className="bg-muted/30 rounded-md p-3 text-sm">
+                    <p className="font-semibold mb-2 text-muted-foreground">Convites Pendentes:</p>
+                    <div className="space-y-2">
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="flex justify-between items-center border-b last:border-0 border-border pb-2 last:pb-0">
+                          <span>{invite.email}</span>
+                          <Badge variant="outline" className="text-[10px]">Pendente</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3854,12 +3905,19 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
                           Administrador
                         </Badge>
                       )}
+                      {member.user_id === groupOwnerId && (
+                          <span className="text-[10px] text-muted-foreground ml-2">(Dono)</span>
+                      )}
                     </div>
                   </div>
 
-                  {isGroupAdmin && member.user_id !== currentUserId && (
+                  {isGroupAdmin && member.user_id !== currentUserId && member.user_id !== groupOwnerId && (
                     <div className="flex items-center gap-2">
-                      <Switch checked={member.is_admin} onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)} />
+                      <Switch 
+                        checked={member.is_admin} 
+                        onCheckedChange={() => handleToggleAdmin(member.id, member.is_admin)} 
+                        title="Alternar Administrador"
+                      />
                       <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveMember(member.id, member.user_id)}>
                         <UserMinus className="h-4 w-4 text-destructive" />
                       </Button>
@@ -3878,12 +3936,56 @@ export const EditGroupDialog = ({ groupId, isOpen, onClose, onSuccess }: EditGro
               {loading ? "Salvando..." : "Salvar Alterações"}
             </Button>
           </div>
+
+          {/* ZONA DE PERIGO - EXCLUSÃO DE GRUPO */}
+          {currentUserId === groupOwnerId && (
+            <div className="mt-8 pt-6 border-t border-destructive/20">
+                <div className="bg-destructive/5 p-4 rounded-md border border-destructive/20">
+                    <h4 className="text-destructive font-semibold flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-4 w-4" /> Zona de Perigo
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        Excluir este grupo apagará permanentemente todas as transações, investimentos e removerá todos os membros associados.
+                    </p>
+                    <Button 
+                        type="button" 
+                        variant="destructive" 
+                        className="w-full"
+                        onClick={() => setDeleteAlertOpen(true)}
+                    >
+                        <Trash2 className="h-4 w-4 mr-2" /> Excluir Grupo Permanentemente
+                    </Button>
+                </div>
+            </div>
+          )}
         </form>
+
+        <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Tem certeza absoluta?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Esta ação não pode ser desfeita. Isso excluirá permanentemente o grupo 
+                        <strong> {formData.name} </strong> e todos os dados associados a ele.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction 
+                        onClick={handleDeleteGroup} 
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={loading}
+                    >
+                        {loading ? "Excluindo..." : "Sim, excluir grupo"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
       </DialogContent>
     </Dialog>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\dialogs\EditGroupDialog.tsx
 
@@ -4874,10 +4976,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle } from "@/lib/icons";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle, Plus } from "@/lib/icons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 
 interface GroupDetailsModalProps {
   isOpen: boolean;
@@ -4932,7 +5037,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
   const loadGroupData = async () => {
     try {
       setLoading(true);
-
       // Load transactions
       const { data: transactionsData, error: transError } = await supabase
         .from("transactions")
@@ -5000,9 +5104,41 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between pr-8">
           <DialogTitle>Detalhes do Grupo: {groupName}</DialogTitle>
         </DialogHeader>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <AddTransactionDialog 
+            type="expense" 
+            defaultGroupId={groupId} 
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="destructive" size="sm">
+                <Plus className="h-4 w-4 mr-2" /> Nova Despesa
+              </Button>
+            }
+          />
+          <AddTransactionDialog 
+            type="income" 
+            defaultGroupId={groupId} 
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="default" size="sm" className="bg-success hover:bg-success/90">
+                <Plus className="h-4 w-4 mr-2" /> Nova Receita
+              </Button>
+            }
+          />
+          <AddInvestmentDialog 
+            defaultGroupId={groupId}
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="outline" size="sm">
+                <PiggyBank className="h-4 w-4 mr-2" /> Novo Investimento
+              </Button>
+            }
+          />
+        </div>
 
         {loading ? (
           <div className="space-y-4">
@@ -5176,7 +5312,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
     </Dialog>
   );
 };
-
 ----------------------------------------
 ENDOFFILE: src\components\groups\GroupDetailsModal.tsx
 
@@ -11426,6 +11561,25 @@ export type Database = {
           }
         ];
       };
+      group_invites: {
+  Row: {
+    id: string;
+    group_id: string;
+    email: string;
+    invited_by: string;
+    status: "pending" | "accepted" | "rejected";
+    created_at: string;
+  };
+  Insert: {
+    group_id: string;
+    email: string;
+    invited_by?: string;
+    status?: "pending" | "accepted" | "rejected";
+  };
+  Update: {
+    status?: "pending" | "accepted" | "rejected";
+  };
+}
       groups: {
         Row: {
           color: string | null;
@@ -11752,6 +11906,7 @@ export {
   Lock,
   Mail,
   Camera,
+  AlertTriangle
 } from "lucide-react";
 
 ----------------------------------------
@@ -12254,7 +12409,7 @@ ENDOFFILE: src\pages\Dashboard.tsx
 STARTOFFILE: src\pages\Groups.tsx
 ----------------------------------------
 import { useState, useEffect } from "react";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "@/lib/icons";
+import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown, Mail, Check, X } from "@/lib/icons";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
@@ -12288,8 +12443,19 @@ interface Group {
   lastActivity: string | null;
 }
 
+interface Invite {
+  id: string;
+  group_id: string;
+  status: string;
+  groups: {
+    name: string;
+    description: string;
+  };
+}
+
 const Groups = () => {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string } | null>(null);
@@ -12302,6 +12468,7 @@ const Groups = () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -12322,7 +12489,6 @@ const Groups = () => {
       if (memberError) throw memberError;
 
       const allGroups = [...(createdGroups || []), ...(memberGroups?.map((mg) => mg.groups).filter(Boolean) || [])];
-
       const uniqueGroups = allGroups.filter((group, index, arr) => arr.findIndex((g) => g.id === group.id) === index);
 
       const groupsWithStats = await Promise.all(
@@ -12353,7 +12519,6 @@ const Groups = () => {
           if (transError) throw transError;
 
           const totalIncome = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-
           const totalExpenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
           const { data: lastTransaction } = await supabase
@@ -12387,9 +12552,60 @@ const Groups = () => {
     }
   };
 
+  const fetchInvites = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !user.email) return;
+
+    const { data } = await supabase
+      .from("group_invites")
+      .select(`
+        id, 
+        group_id, 
+        status,
+        groups (name, description)
+      `)
+      .eq("email", user.email)
+      .eq("status", "pending");
+    
+    setInvites(data as any || []);
+  };
+
   useEffect(() => {
     fetchGroups();
+    fetchInvites();
   }, []);
+
+  const handleRespondInvite = async (invite: Invite, accept: boolean) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (accept) {
+        // 1. Adiciona como membro
+        const { error: memberError } = await supabase.from("group_members").insert({
+          group_id: invite.group_id,
+          user_id: user.id,
+          is_admin: false
+        });
+        if (memberError) throw memberError;
+
+        // 2. Atualiza convite
+        await supabase.from("group_invites").update({ status: "accepted" }).eq("id", invite.id);
+        
+        toast({ title: "Sucesso", description: `Você entrou no grupo ${invite.groups.name}` });
+      } else {
+        // Rejeita
+        await supabase.from("group_invites").update({ status: "rejected" }).eq("id", invite.id);
+        toast({ title: "Convite rejeitado" });
+      }
+
+      fetchInvites();
+      fetchGroups();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Erro ao processar convite", variant: "destructive" });
+    }
+  };
 
   const handleEditGroup = (groupId: string) => {
     setEditGroupId(groupId);
@@ -12429,6 +12645,37 @@ const Groups = () => {
             </div>
             <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
+
+          {/* SEÇÃO DE CONVITES */}
+          {invites.length > 0 && (
+            <Card className="border-l-4 border-l-primary bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Mail className="h-5 w-5" /> Convites Pendentes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {invites.map(invite => (
+                    <div key={invite.id} className="flex items-center justify-between bg-background p-3 rounded border">
+                      <div>
+                        <p className="font-bold">Grupo: {invite.groups.name}</p>
+                        <p className="text-xs text-muted-foreground">{invite.groups.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => handleRespondInvite(invite, false)}>
+                          <X className="h-4 w-4 mr-1" /> Recusar
+                        </Button>
+                        <Button size="sm" className="bg-success hover:bg-success/90" onClick={() => handleRespondInvite(invite, true)}>
+                          <Check className="h-4 w-4 mr-1" /> Aceitar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {groups.map((group) => {
@@ -12515,8 +12762,11 @@ const Groups = () => {
                         <Eye className="h-4 w-4 mr-2" />
                         Detalhes
                       </Button>
+                      {/* Botão de despesa rápida no card, usando o novo dialog adaptado */}
                       <AddTransactionDialog
                         type="expense"
+                        defaultGroupId={group.id}
+                        onSuccess={fetchGroups} // Recarrega lista ao salvar
                         trigger={
                           <Button variant="outline" className="flex-1">
                             <Plus className="h-4 w-4 mr-2" />
@@ -12610,7 +12860,6 @@ const Groups = () => {
 };
 
 export default Groups;
-
 ----------------------------------------
 ENDOFFILE: src\pages\Groups.tsx
 
@@ -13266,6 +13515,171 @@ export default Investments;
 ----------------------------------------
 ENDOFFILE: src\pages\Investments.tsx
 
+STARTOFFILE: src\pages\JoinGroup.tsx
+----------------------------------------
+import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { Users, Check, X, Loader2 } from "@/lib/icons";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+
+export default function JoinGroup() {
+  const { inviteId } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [invite, setInvite] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    checkInvite();
+  }, [inviteId]);
+
+  const checkInvite = async () => {
+    try {
+      // 1. Verificar autenticação
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        // Salva a URL para redirecionar após login
+        sessionStorage.setItem("redirectUrl", window.location.pathname);
+        navigate("/auth");
+        return;
+      }
+      setUser(user);
+
+      if (!inviteId) throw new Error("Link inválido");
+
+      // 2. Buscar dados do convite
+      const { data, error } = await supabase
+        .from("group_invites")
+        .select(`
+          *,
+          groups (name, description, created_by)
+        `)
+        .eq("id", inviteId)
+        .single();
+
+      if (error) throw error;
+
+      if (data.status !== 'pending') {
+        toast({ 
+            title: "Convite inválido", 
+            description: "Este convite já foi aceito, rejeitado ou expirou.", 
+            variant: "destructive" 
+        });
+        navigate("/groups");
+        return;
+      }
+
+      setInvite(data);
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Não foi possível carregar o convite.", variant: "destructive" });
+      navigate("/dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRespond = async (accept: boolean) => {
+    if (!user || !invite) return;
+    setLoading(true);
+
+    try {
+      if (accept) {
+        // Verificar se já é membro antes de inserir
+        const { data: existingMember } = await supabase
+            .from("group_members")
+            .select("id")
+            .eq("group_id", invite.group_id)
+            .eq("user_id", user.id)
+            .single();
+
+        if (existingMember) {
+            toast({ title: "Aviso", description: "Você já faz parte deste grupo." });
+        } else {
+            // Entrar no grupo
+            const { error: joinError } = await supabase.from("group_members").insert({
+                group_id: invite.group_id,
+                user_id: user.id,
+                is_admin: false // Todo membro entra como comum, apenas o criador/admin promove
+            });
+            if (joinError) throw joinError;
+        }
+
+        // Atualizar status do convite
+        await supabase.from("group_invites").update({ status: "accepted" }).eq("id", invite.id);
+        
+        toast({ title: "Bem-vindo!", description: `Você entrou no grupo ${invite.groups.name}` });
+        navigate("/groups");
+      } else {
+        // Rejeitar
+        await supabase.from("group_invites").update({ status: "rejected" }).eq("id", invite.id);
+        toast({ title: "Convite recusado" });
+        navigate("/dashboard");
+      }
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Falha ao processar solicitação", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-4">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <p className="text-muted-foreground">Verificando convite...</p>
+            </div>
+        </div>
+    );
+  }
+
+  if (!invite) return null;
+
+  return (
+    <DashboardLayout>
+      <div className="flex items-center justify-center min-h-[80vh] p-4">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="text-center">
+            <div className="mx-auto bg-primary/10 p-4 rounded-full w-fit mb-4">
+              <Users className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle>Convite para Grupo</CardTitle>
+            <CardDescription>Você foi convidado para participar de um grupo financeiro.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="bg-muted/30 p-6 rounded-lg text-center border border-border">
+              <h3 className="font-bold text-2xl mb-2 text-foreground">{invite.groups.name}</h3>
+              {invite.groups.description && <p className="text-sm text-muted-foreground">{invite.groups.description}</p>}
+              <div className="mt-4 text-xs text-muted-foreground">
+                Convidado por: {invite.email}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => handleRespond(false)}>
+                <X className="mr-2 h-4 w-4" /> Recusar
+              </Button>
+              <Button className="flex-1" onClick={() => handleRespond(true)}>
+                <Check className="mr-2 h-4 w-4" /> Aceitar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}
+----------------------------------------
+ENDOFFILE: src\pages\JoinGroup.tsx
+
 STARTOFFILE: src\pages\NotFound.tsx
 ----------------------------------------
 import { useLocation } from "react-router-dom";
@@ -13603,8 +14017,8 @@ import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Calendar 
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
-import { AddEventDialog } from "@/components/dialogs/AddEventDialog"; // Novo
-import { EventDetailsModal } from "@/components/transactions/EventDetailsModal"; // Novo
+import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
+import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13634,7 +14048,7 @@ interface Transaction {
   category: string;
   date: string;
   group_id: string | null;
-  event_id: string | null; // Novo
+  event_id: string | null;
   group_name?: string;
   is_fixed: boolean;
   is_recurring: boolean;
@@ -13646,7 +14060,8 @@ interface Event {
   name: string;
   description: string;
   date: string;
-  totalAmount?: number; // Calculado no frontend
+  totalAmount?: number;
+  // Calculado no frontend
 }
 
 type DisplayItem = { kind: "transaction"; data: Transaction } | { kind: "event"; data: Event };
@@ -13688,13 +14103,8 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
+      // Carrega TODAS as transações do período, inclusive as que estão dentro de eventos
       let query = supabase.from("transactions").select(`*, groups!left (name)`).order("date", { ascending: false });
-
-      // Aplica filtro de data apenas se não tiver event_id (transações de eventos carregamos todas para somar correto, ou filtramos depois)
-      // Nota: Para simplificar a visualização, vamos carregar tudo do período para a lista principal
-      // e para eventos, talvez precisemos carregar todas do evento independente da data?
-      // Por simplicidade, vamos carregar transações do período. Se o evento for antigo mas tiver transação nova, ele aparece?
-      // Vamos carregar TUDO do período selecionado.
 
       if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
@@ -13728,7 +14138,6 @@ const Transactions = () => {
   const loadEvents = async () => {
     try {
       // Carrega eventos que ocorreram neste período (data de referência)
-      // OU eventos que têm transações neste período? Vamos pela data de referência do evento por enquanto.
       let query = supabase
         .from("events" as any)
         .select("*")
@@ -13754,6 +14163,7 @@ const Transactions = () => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -13772,14 +14182,12 @@ const Transactions = () => {
 
   // --- Lógica de Mesclagem e Exibição ---
 
-  // 1. Calcular totais dos eventos baseados nas transações carregadas (ou buscar totais reais do banco se preferir)
-  // Estratégia: Vamos buscar o total REAL de cada evento carregado, independente do filtro de data da transação
-  // Para a UI ficar rápida, vamos fazer um fetch separado de somatórios para os eventos listados
+  // 1. Calcular totais dos eventos para exibição no CARD DO EVENTO (Lista)
   useEffect(() => {
     if (events.length > 0) {
       updateEventTotals();
     }
-  }, [events.length]); // Atualiza quando a lista de eventos muda
+  }, [events.length]);
 
   const updateEventTotals = async () => {
     const eventIds = events.map((e) => e.id);
@@ -13798,18 +14206,18 @@ const Transactions = () => {
     }
   };
 
-  // 2. Preparar lista de exibição
+  // 2. Preparar lista de exibição (Visual apenas)
   const displayList = useMemo(() => {
     const list: DisplayItem[] = [];
 
-    // Adiciona transações que NÃO têm event_id (transações soltas)
+    // Adiciona transações que NÃO têm event_id (transações soltas) na lista principal
     transactions.forEach((t) => {
       if (!t.event_id) {
         list.push({ kind: "transaction", data: t });
       }
     });
 
-    // Adiciona os eventos
+    // Adiciona os eventos na lista principal
     events.forEach((e) => {
       list.push({ kind: "event", data: e });
     });
@@ -13829,7 +14237,6 @@ const Transactions = () => {
         } else {
           // Filtros para eventos
           const matchesSearch = item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
-          // Evento aparece independente de filtro de categoria/tipo por enquanto, ou pode ser refinado
           return matchesSearch;
         }
       })
@@ -13840,25 +14247,24 @@ const Transactions = () => {
       });
   }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup]);
 
-  // Cálculos de Totais para o Header (considerando apenas o que está visível ou tudo?)
-  // Geralmente dashboard soma tudo. Aqui vamos somar o que está filtrado na lista "solta" + totais dos eventos?
-  // Atenção: Se somarmos eventos + transações, e as transações do evento não estão na lista, ok.
-  // Mas o filtro de data pegou transações "soltas" dentro da data e eventos dentro da data.
+  // --- CÁLCULO DE TOTAIS CORRIGIDO ---
+  // Agora usamos a lista 'transactions' bruta (que contém tudo que ocorreu no mês)
+  // ao invés de usar 'displayList' (que contém objetos de Evento com totais acumulados)
 
-  const totalIncome = displayList.reduce((acc, item) => {
-    if (item.kind === "transaction" && item.data.type === "income") return acc + item.data.amount;
-    if (item.kind === "event" && (item.data.totalAmount || 0) > 0) return acc + (item.data.totalAmount || 0);
+  const totalIncome = transactions.reduce((acc, t) => {
+    if (t.type === "income") return acc + t.amount;
     return acc;
   }, 0);
 
-  const totalExpense = displayList.reduce((acc, item) => {
-    if (item.kind === "transaction" && item.data.type === "expense") return acc + Math.abs(item.data.amount);
-    if (item.kind === "event" && (item.data.totalAmount || 0) < 0) return acc + Math.abs(item.data.totalAmount || 0);
+  const totalExpense = transactions.reduce((acc, t) => {
+    if (t.type === "expense") return acc + Math.abs(t.amount);
     return acc;
   }, 0);
 
   const balance = totalIncome - totalExpense;
-  const categories = Array.from(new Set(transactions.map((t) => t.category)));
+
+  // Filtra categorias vazias para evitar erro no Select do Shadcn
+  const categories = Array.from(new Set(transactions.map((t) => t.category))).filter((cat) => cat && cat.trim() !== "");
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -13876,7 +14282,7 @@ const Transactions = () => {
             <p className="text-muted-foreground">Gerencie suas entradas, saídas e eventos</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <AddEventDialog onSuccess={loadData} /> {/* Botão Novo de Evento */}
+            <AddEventDialog onSuccess={loadData} />
             <AddTransactionDialog
               type="income"
               onSuccess={loadData}
@@ -13898,7 +14304,6 @@ const Transactions = () => {
           </div>
         </div>
 
-        {/* Cards de Totais e Filtros mantidos iguais... */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -13923,6 +14328,7 @@ const Transactions = () => {
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
                 </Select>
+
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
@@ -13936,6 +14342,7 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
+
                 <Select value={filterGroup} onValueChange={setFilterGroup}>
                   <SelectTrigger>
                     <SelectValue placeholder="Grupo" />
@@ -14128,7 +14535,8 @@ const Transactions = () => {
             eventName={selectedEvent.name}
             eventDate={selectedEvent.date}
             onUpdate={() => {
-              loadData(); // Recarrega lista principal ao mudar algo no modal
+              loadData();
+              // Recarrega lista principal ao mudar algo no modal
               updateEventTotals();
             }}
           />
@@ -15934,6 +16342,78 @@ Deno.serve(async (req) => {
 
 ----------------------------------------
 ENDOFFILE: supabase\functions\check-reminders\index.ts
+
+STARTOFFILE: supabase\functions\send-invite-email\index.ts
+----------------------------------------
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    )
+
+    // Verifica autenticação de quem chamou a função
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      req.headers.get('Authorization')?.replace('Bearer ', '') ?? ''
+    )
+
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+    }
+
+    const { email, link, groupName } = await req.json()
+
+    // Chama API de Email (Exemplo com Resend)
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RESEND_API_KEY}`
+      },
+      body: JSON.stringify({
+        from: 'Zeni Wallet <noreply@seu-dominio.com>',
+        to: [email],
+        subject: `Convite para participar do grupo ${groupName}`,
+        html: `
+          <h1>Você foi convidado!</h1>
+          <p>Olá,</p>
+          <p>Você foi convidado para participar do grupo financeiro <strong>${groupName}</strong> no Zeni Wallet.</p>
+          <p>Clique no botão abaixo para aceitar:</p>
+          <a href="${link}" style="background-color: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Aceitar Convite</a>
+          <p>Ou copie este link: ${link}</p>
+        `
+      })
+    })
+
+    const data = await res.json()
+
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})
+----------------------------------------
+ENDOFFILE: supabase\functions\send-invite-email\index.ts
 
 STARTOFFILE: tailwind.config.ts
 ----------------------------------------

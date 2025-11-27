@@ -7,19 +7,23 @@ export const checkIsResourceOwner = (userId: string, resourceOwnerId: string): b
 };
 
 export const checkGroupMembership = async (userId: string, groupId: string): Promise<boolean> => {
+if (!groupId || groupId === "undefined" || groupId === "personal" || groupId === "none") {
+    return false;
+  }
+
   try {
     const { data, error } = await supabase
       .from('group_members')
       .select('id')
       .eq('user_id', userId)
       .eq('group_id', groupId)
-      .single();
+      .maybeSingle(); // Use maybeSingle para não gerar erro no console se não encontrar
 
-    if (error) {
+    if (error || !data) {
       return false;
     }
 
-    return !!data;
+    return true;
   } catch {
     return false;
   }

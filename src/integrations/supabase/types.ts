@@ -35,6 +35,25 @@ export type Database = {
           }
         ];
       };
+      group_invites: {
+  Row: {
+    id: string;
+    group_id: string;
+    email: string;
+    invited_by: string;
+    status: "pending" | "accepted" | "rejected";
+    created_at: string;
+  };
+  Insert: {
+    group_id: string;
+    email: string;
+    invited_by?: string;
+    status?: "pending" | "accepted" | "rejected";
+  };
+  Update: {
+    status?: "pending" | "accepted" | "rejected";
+  };
+}
       groups: {
         Row: {
           color: string | null;

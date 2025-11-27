@@ -1,19 +1,14 @@
 import { useState } from "react";
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
 import { useToast } from "@/hooks/use-toast";
 import { useSanitizedForm } from "@/hooks/useSanitizedForm";
-
 import { supabase } from "@/integrations/supabase/client";
-
 import { sanitizeInput, sanitizeColor, validateGroupData, ensureAuthenticated, withRateLimit, SECURITY_LIMITS } from "@/utils/security";
-
 import type { GroupData } from "@/utils/security/types";
 
 interface AddGroupDialogProps {
@@ -87,7 +82,6 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
   const submitGroup = async (values: FormData) => {
     try {
       const userId = await ensureAuthenticated();
-
       const hexColor = colorToHex[values.color || "blue"];
       const sanitizedColor = sanitizeColor(hexColor);
 
@@ -109,24 +103,22 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
       await withRateLimit(
         `group:${userId}`,
         async () => {
-          const { data, error } = await supabase
+          // 1. Cria o grupo
+          // O Trigger 'add_creator_to_group' no banco de dados irá automaticamente
+          // adicionar este usuário como administrador na tabela group_members.
+          const { error } = await supabase
             .from("groups")
             .insert({
               name: values.name,
               description: values.description || null,
               color: sanitizedColor,
               created_by: userId,
-            })
-            .select()
-            .single();
+            });
 
           if (error) throw error;
-
-          await supabase.from("group_members").insert({
-            group_id: data.id,
-            user_id: userId,
-            is_admin: true,
-          });
+          
+          // REMOVIDO: O bloco que tentava fazer o upsert manual em group_members
+          // Isso causava o erro de RLS 403 Forbidden.
         },
         10
       );
@@ -146,7 +138,6 @@ export const AddGroupDialog = ({ trigger, onGroupCreated }: AddGroupDialogProps)
         description: error instanceof Error ? error.message : "Erro ao criar grupo",
         variant: "destructive",
       });
-      throw error;
     }
   };
 

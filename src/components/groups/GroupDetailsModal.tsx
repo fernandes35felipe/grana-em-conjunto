@@ -3,10 +3,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle } from "@/lib/icons";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Calendar, ArrowUpCircle, ArrowDownCircle, Plus } from "@/lib/icons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 
 interface GroupDetailsModalProps {
   isOpen: boolean;
@@ -61,7 +64,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
   const loadGroupData = async () => {
     try {
       setLoading(true);
-
       // Load transactions
       const { data: transactionsData, error: transError } = await supabase
         .from("transactions")
@@ -129,9 +131,41 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between pr-8">
           <DialogTitle>Detalhes do Grupo: {groupName}</DialogTitle>
         </DialogHeader>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <AddTransactionDialog 
+            type="expense" 
+            defaultGroupId={groupId} 
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="destructive" size="sm">
+                <Plus className="h-4 w-4 mr-2" /> Nova Despesa
+              </Button>
+            }
+          />
+          <AddTransactionDialog 
+            type="income" 
+            defaultGroupId={groupId} 
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="default" size="sm" className="bg-success hover:bg-success/90">
+                <Plus className="h-4 w-4 mr-2" /> Nova Receita
+              </Button>
+            }
+          />
+          <AddInvestmentDialog 
+            defaultGroupId={groupId}
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="outline" size="sm">
+                <PiggyBank className="h-4 w-4 mr-2" /> Novo Investimento
+              </Button>
+            }
+          />
+        </div>
 
         {loading ? (
           <div className="space-y-4">

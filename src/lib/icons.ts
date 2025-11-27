@@ -49,4 +49,5 @@ export {
   Lock,
   Mail,
   Camera,
+  AlertTriangle
 } from "lucide-react";

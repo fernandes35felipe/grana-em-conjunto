@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,6 +15,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Investments = lazy(() => import("./pages/Investments"));
 const Groups = lazy(() => import("./pages/Groups"));
+const JoinGroup = lazy(() => import("./pages/JoinGroup")); // NOVA PÁGINA
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Reminder = lazy(() => import("./pages/Reminders"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -42,6 +42,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
+              
+              {/* ROTA DE PROTEÇÃO */}
               <Route
                 path="/dashboard"
                 element={
@@ -74,6 +76,15 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              
+              {/* NOVA ROTA PARA ENTRAR NO GRUPO VIA LINK */}
+              <Route
+                path="/groups/join/:inviteId"
+                element={
+                    <JoinGroup />
+                }
+              />
+
               <Route
                 path="/reminders"
                 element={

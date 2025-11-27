@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown } from "@/lib/icons";
+import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown, Mail, Check, X } from "@/lib/icons";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
@@ -33,8 +33,19 @@ interface Group {
   lastActivity: string | null;
 }
 
+interface Invite {
+  id: string;
+  group_id: string;
+  status: string;
+  groups: {
+    name: string;
+    description: string;
+  };
+}
+
 const Groups = () => {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; name: string } | null>(null);
@@ -47,6 +58,7 @@ const Groups = () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -67,7 +79,6 @@ const Groups = () => {
       if (memberError) throw memberError;
 
       const allGroups = [...(createdGroups || []), ...(memberGroups?.map((mg) => mg.groups).filter(Boolean) || [])];
-
       const uniqueGroups = allGroups.filter((group, index, arr) => arr.findIndex((g) => g.id === group.id) === index);
 
       const groupsWithStats = await Promise.all(
@@ -98,7 +109,6 @@ const Groups = () => {
           if (transError) throw transError;
 
           const totalIncome = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-
           const totalExpenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
 
           const { data: lastTransaction } = await supabase
@@ -132,9 +142,60 @@ const Groups = () => {
     }
   };
 
+  const fetchInvites = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !user.email) return;
+
+    const { data } = await supabase
+      .from("group_invites")
+      .select(`
+        id, 
+        group_id, 
+        status,
+        groups (name, description)
+      `)
+      .eq("email", user.email)
+      .eq("status", "pending");
+    
+    setInvites(data as any || []);
+  };
+
   useEffect(() => {
     fetchGroups();
+    fetchInvites();
   }, []);
+
+  const handleRespondInvite = async (invite: Invite, accept: boolean) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (accept) {
+        // 1. Adiciona como membro
+        const { error: memberError } = await supabase.from("group_members").insert({
+          group_id: invite.group_id,
+          user_id: user.id,
+          is_admin: false
+        });
+        if (memberError) throw memberError;
+
+        // 2. Atualiza convite
+        await supabase.from("group_invites").update({ status: "accepted" }).eq("id", invite.id);
+        
+        toast({ title: "Sucesso", description: `Você entrou no grupo ${invite.groups.name}` });
+      } else {
+        // Rejeita
+        await supabase.from("group_invites").update({ status: "rejected" }).eq("id", invite.id);
+        toast({ title: "Convite rejeitado" });
+      }
+
+      fetchInvites();
+      fetchGroups();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Erro ao processar convite", variant: "destructive" });
+    }
+  };
 
   const handleEditGroup = (groupId: string) => {
     setEditGroupId(groupId);
@@ -174,6 +235,37 @@ const Groups = () => {
             </div>
             <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
+
+          {/* SEÇÃO DE CONVITES */}
+          {invites.length > 0 && (
+            <Card className="border-l-4 border-l-primary bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Mail className="h-5 w-5" /> Convites Pendentes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {invites.map(invite => (
+                    <div key={invite.id} className="flex items-center justify-between bg-background p-3 rounded border">
+                      <div>
+                        <p className="font-bold">Grupo: {invite.groups.name}</p>
+                        <p className="text-xs text-muted-foreground">{invite.groups.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => handleRespondInvite(invite, false)}>
+                          <X className="h-4 w-4 mr-1" /> Recusar
+                        </Button>
+                        <Button size="sm" className="bg-success hover:bg-success/90" onClick={() => handleRespondInvite(invite, true)}>
+                          <Check className="h-4 w-4 mr-1" /> Aceitar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {groups.map((group) => {
@@ -260,8 +352,11 @@ const Groups = () => {
                         <Eye className="h-4 w-4 mr-2" />
                         Detalhes
                       </Button>
+                      {/* Botão de despesa rápida no card, usando o novo dialog adaptado */}
                       <AddTransactionDialog
                         type="expense"
+                        defaultGroupId={group.id}
+                        onSuccess={fetchGroups} // Recarrega lista ao salvar
                         trigger={
                           <Button variant="outline" className="flex-1">
                             <Plus className="h-4 w-4 mr-2" />
