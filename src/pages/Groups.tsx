@@ -1,30 +1,27 @@
-import { useState, useEffect } from "react";
-import { Users, Plus, Settings, Eye, TrendingUp, TrendingDown, Mail, Check, X } from "@/lib/icons";
+import React, { useState, useEffect } from "react";
+import { Users, Wallet, TrendingDown, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { AddGroupDialog } from "@/components/dialogs/AddGroupDialog";
 import { EditGroupDialog } from "@/components/dialogs/EditGroupDialog";
-import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { GroupDetailsModal } from "@/components/groups/GroupDetailsModal";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 
 interface Group {
   id: string;
   name: string;
-  description: string | null;
+  description: string;
   color: string;
   created_by: string;
-  created_at: string;
-  updated_at: string;
+  memberCount: number;
   members: Array<{
     user_id: string;
     joined_at: string;
-    profiles?: {
+    profiles: {
       full_name: string | null;
     } | null;
   }>;
@@ -40,7 +37,8 @@ interface Invite {
   groups: {
     name: string;
     description: string;
-  };
+    created_by: string;
+  } | null;
 }
 
 const Groups = () => {
@@ -53,12 +51,27 @@ const Groups = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
+  // --- REALTIME: ATUALIZAÇÃO AUTOMÁTICA ---
+  useEffect(() => {
+    // Escuta mudanças em transações, grupos e membros para atualizar a tela sem F5
+    const channel = supabase
+      .channel("groups-page-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => fetchGroups())
+      .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, () => fetchGroups())
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, () => fetchGroups())
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_invites" }, () => fetchInvites())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const fetchGroups = async () => {
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -101,30 +114,45 @@ const Groups = () => {
             })
           );
 
-          const { data: transactions, error: transError } = await supabase
-            .from("transactions")
-            .select("amount, type")
-            .eq("group_id", group.id);
+          const { data: transactions } = await supabase.from("transactions").select("amount, type, created_at").eq("group_id", group.id);
 
-          if (transError) throw transError;
+          let totalExpenses = 0;
+          let totalIncome = 0;
+          let lastActivity = null;
 
-          const totalIncome = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-          const totalExpenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+          if (transactions) {
+            transactions.forEach((t) => {
+              // CORREÇÃO DE SALDO AQUI:
+              // Usamos Math.abs() porque no banco a despesa é salva como negativo (ex: -100).
+              // Queremos somar a magnitude da despesa (100) para mostrar no card de "Despesas"
+              // e para subtrair corretamente do saldo depois.
+              if (t.type === "expense") {
+                totalExpenses += Math.abs(t.amount);
+              } else {
+                totalIncome += t.amount;
+              }
 
-          const { data: lastTransaction } = await supabase
-            .from("transactions")
-            .select("created_at")
-            .eq("group_id", group.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+              if (!lastActivity || new Date(t.created_at) > new Date(lastActivity)) {
+                lastActivity = t.created_at;
+              }
+            });
+          }
+
+          if (members && members.length > 0) {
+            members.forEach((m) => {
+              if (!lastActivity || new Date(m.joined_at) > new Date(lastActivity)) {
+                lastActivity = m.joined_at;
+              }
+            });
+          }
 
           return {
             ...group,
-            totalIncome,
-            totalExpenses: -Math.abs(totalExpenses),
-            lastActivity: lastTransaction?.created_at || group.created_at,
+            memberCount: members?.length || 0,
             members: membersWithProfiles,
+            totalExpenses,
+            totalIncome,
+            lastActivity,
           };
         })
       );
@@ -133,8 +161,8 @@ const Groups = () => {
     } catch (error) {
       console.error("Erro ao buscar grupos:", error);
       toast({
-        title: "Erro",
-        description: "Erro ao carregar grupos. Tente novamente.",
+        title: "Erro ao carregar grupos",
+        description: "Não foi possível carregar seus grupos. Tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -143,21 +171,51 @@ const Groups = () => {
   };
 
   const fetchInvites = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !user.email) return;
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data } = await supabase
-      .from("group_invites")
-      .select(`
-        id, 
-        group_id, 
-        status,
-        groups (name, description)
-      `)
-      .eq("email", user.email)
-      .eq("status", "pending");
-    
-    setInvites(data as any || []);
+      const userEmail = user.email;
+      if (userEmail) {
+        const { data, error } = await supabase
+          .from("group_invites")
+          .select(
+            `
+            id,
+            group_id,
+            status,
+            groups (
+              name,
+              description,
+              created_by
+            )
+          `
+          )
+          .eq("email", userEmail)
+          .eq("status", "pending");
+
+        if (error) throw error;
+
+        const formattedInvites: Invite[] = (data || []).map((item) => ({
+          id: item.id,
+          group_id: item.group_id,
+          status: item.status,
+          groups: item.groups
+            ? {
+                name: item.groups.name,
+                description: item.groups.description || "",
+                created_by: item.groups.created_by,
+              }
+            : null,
+        }));
+
+        setInvites(formattedInvites);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar convites:", error);
+    }
   };
 
   useEffect(() => {
@@ -165,35 +223,51 @@ const Groups = () => {
     fetchInvites();
   }, []);
 
-  const handleRespondInvite = async (invite: Invite, accept: boolean) => {
+  const handleInviteResponse = async (invite: Invite, accept: boolean) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       if (accept) {
-        // 1. Adiciona como membro
-        const { error: memberError } = await supabase.from("group_members").insert({
-          group_id: invite.group_id,
-          user_id: user.id,
-          is_admin: false
-        });
-        if (memberError) throw memberError;
+        const { data: existingMember } = await supabase
+          .from("group_members")
+          .select("id")
+          .eq("group_id", invite.group_id)
+          .eq("user_id", user.id)
+          .single();
 
-        // 2. Atualiza convite
+        if (!existingMember) {
+          const { error: memberError } = await supabase.from("group_members").insert({
+            group_id: invite.group_id,
+            user_id: user.id,
+            is_admin: false,
+          });
+          if (memberError) throw memberError;
+        }
+
         await supabase.from("group_invites").update({ status: "accepted" }).eq("id", invite.id);
-        
-        toast({ title: "Sucesso", description: `Você entrou no grupo ${invite.groups.name}` });
+        toast({
+          title: "Sucesso",
+          description: `Você entrou no grupo ${invite.groups?.name || "do convite"}`,
+        });
       } else {
-        // Rejeita
         await supabase.from("group_invites").update({ status: "rejected" }).eq("id", invite.id);
-        toast({ title: "Convite rejeitado" });
+        toast({
+          title: "Convite rejeitado",
+        });
       }
 
       fetchInvites();
       fetchGroups();
     } catch (error) {
       console.error(error);
-      toast({ title: "Erro", description: "Erro ao processar convite", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Erro ao processar convite",
+        variant: "destructive",
+      });
     }
   };
 
@@ -236,215 +310,182 @@ const Groups = () => {
             <AddGroupDialog onGroupCreated={fetchGroups} />
           </div>
 
-          {/* SEÇÃO DE CONVITES */}
           {invites.length > 0 && (
-            <Card className="border-l-4 border-l-primary bg-primary/5">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Mail className="h-5 w-5" /> Convites Pendentes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {invites.map(invite => (
-                    <div key={invite.id} className="flex items-center justify-between bg-background p-3 rounded border">
-                      <div>
-                        <p className="font-bold">Grupo: {invite.groups.name}</p>
-                        <p className="text-xs text-muted-foreground">{invite.groups.description}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => handleRespondInvite(invite, false)}>
-                          <X className="h-4 w-4 mr-1" /> Recusar
-                        </Button>
-                        <Button size="sm" className="bg-success hover:bg-success/90" onClick={() => handleRespondInvite(invite, true)}>
-                          <Check className="h-4 w-4 mr-1" /> Aceitar
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Clock className="h-5 w-5 text-yellow-500" />
+                Convites Pendentes
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {invites.map((invite) => (
+                  <Card key={invite.id} className="border-yellow-200 bg-yellow-50 dark:bg-yellow-900/20">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span className="text-lg">{invite.groups?.name || "Grupo Indisponível"}</span>
+                        <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-800">
+                          Pendente
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {invite.groups ? (
+                        <>
+                          {invite.groups.description && <p className="text-sm text-muted-foreground mb-4">{invite.groups.description}</p>}
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="flex-1" onClick={() => handleInviteResponse(invite, false)}>
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Recusar
+                            </Button>
+                            <Button size="sm" className="flex-1" onClick={() => handleInviteResponse(invite, true)}>
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Aceitar
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-sm text-destructive flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            Detalhes do grupo não disponíveis.
+                          </p>
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => handleInviteResponse(invite, false)}>
+                            Remover Convite
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {groups.map((group) => {
-              const balance = group.totalIncome + group.totalExpenses;
+          <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {groups.length === 0 ? (
+              <Card className="md:col-span-2 lg:col-span-3 border-2 border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-lg font-medium text-muted-foreground mb-2">Nenhum grupo encontrado</p>
+                  <p className="text-sm text-muted-foreground mb-4">Crie seu primeiro grupo para começar a compartilhar despesas</p>
+                  <AddGroupDialog onGroupCreated={fetchGroups} />
+                </CardContent>
+              </Card>
+            ) : (
+              groups.map((group) => {
+                const getColorClasses = (color: string) => {
+                  const colorMap: Record<string, string> = {
+                    blue: "bg-blue-500",
+                    green: "bg-green-500",
+                    purple: "bg-purple-500",
+                    red: "bg-red-500",
+                    yellow: "bg-yellow-500",
+                    pink: "bg-pink-500",
+                    orange: "bg-orange-500",
+                    indigo: "bg-indigo-500",
+                  };
+                  return colorMap[color] || "bg-blue-500";
+                };
 
-              return (
-                <Card key={group.id} className="hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-12 h-12 rounded-full flex items-center justify-center"
-                          style={{ backgroundColor: group.color || "#3b82f6" }}
-                        >
-                          <Users className="h-6 w-6 text-white" />
+                // Agora que totalExpenses é positivo, a subtração funciona como esperado (Receita - Despesa)
+                const balance = group.totalIncome - group.totalExpenses;
+                const isCreator = group.created_by === currentUserId;
+
+                return (
+                  <Card
+                    key={group.id}
+                    className="relative overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer"
+                    onClick={() => setSelectedGroup({ id: group.id, name: group.name })}
+                  >
+                    <div
+                      className={`absolute top-0 right-0 w-32 h-32 ${getColorClasses(group.color)} opacity-10 rounded-full -mr-16 -mt-16`}
+                    />
+                    <CardHeader className="pb-4">
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-xl">{group.name}</CardTitle>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant={isCreator ? "default" : "secondary"} className="text-xs">
+                            {isCreator ? "Criador" : "Membro"}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            <Users className="w-3 h-3 mr-1" />
+                            {group.memberCount} {group.memberCount === 1 ? "membro" : "membros"}
+                          </Badge>
+                        </div>
+                      </div>
+                      {group.description && <p className="text-sm text-muted-foreground mt-2">{group.description}</p>}
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Receitas</p>
+                          <p className="text-lg font-semibold text-green-600 dark:text-green-400 flex items-center gap-1">
+                            <TrendingUp className="w-4 h-4" />
+                            R$ {group.totalIncome.toFixed(2)}
+                          </p>
                         </div>
                         <div>
-                          <CardTitle className="text-lg">{group.name}</CardTitle>
-                          {group.description && <CardDescription className="text-xs mt-1">{group.description}</CardDescription>}
+                          <p className="text-sm text-muted-foreground">Despesas</p>
+                          <p className="text-lg font-semibold text-red-600 dark:text-red-400 flex items-center gap-1">
+                            <TrendingDown className="w-4 h-4" />
+                            {/* Mostra despesas como valor positivo no card, pois já está na seção "Despesas" */}
+                            R$ {group.totalExpenses.toFixed(2)}
+                          </p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => handleEditGroup(group.id)}>
-                        <Settings className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Membros</span>
-                      <div className="flex -space-x-2">
-                        {group.members.slice(0, 3).map((member, idx) => (
-                          <Avatar key={idx} className="h-8 w-8 border-2 border-background">
-                            <AvatarFallback className="text-xs">
-                              {(member.profiles?.full_name || "U").charAt(0).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                        ))}
-                        {group.members.length > 3 && (
-                          <div className="h-8 w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
-                            <span className="text-xs font-medium">+{group.members.length - 3}</span>
-                          </div>
+
+                      <div>
+                        <p className="text-sm text-muted-foreground">Saldo</p>
+                        <div className="flex items-center justify-between">
+                          <p
+                            className={`text-xl font-bold flex items-center gap-1 ${
+                              balance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            <Wallet className="w-5 h-5" />
+                            R$ {Math.abs(balance).toFixed(2)}
+                            {balance < 0 && " (negativo)"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex justify-between items-center">
+                        <p className="text-xs text-muted-foreground">
+                          {group.lastActivity
+                            ? `Última atividade: ${new Date(group.lastActivity).toLocaleDateString("pt-BR")}`
+                            : "Sem atividades"}
+                        </p>
+                        {isCreator && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditGroup(group.id);
+                            }}
+                          >
+                            Editar
+                          </Button>
                         )}
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <TrendingUp className="h-4 w-4 text-success" />
-                          Receitas
-                        </span>
-                        <span className="font-medium text-success">
-                          {group.totalIncome.toLocaleString("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <TrendingDown className="h-4 w-4 text-destructive" />
-                          Despesas
-                        </span>
-                        <span className="font-medium text-destructive">
-                          {group.totalExpenses.toLocaleString("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between pt-2 border-t">
-                        <span className="text-sm font-medium">Saldo</span>
-                        <span className={`font-bold ${balance >= 0 ? "text-success" : "text-destructive"}`}>
-                          {balance.toLocaleString("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          })}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button variant="outline" className="flex-1" onClick={() => setSelectedGroup({ id: group.id, name: group.name })}>
-                        <Eye className="h-4 w-4 mr-2" />
-                        Detalhes
-                      </Button>
-                      {/* Botão de despesa rápida no card, usando o novo dialog adaptado */}
-                      <AddTransactionDialog
-                        type="expense"
-                        defaultGroupId={group.id}
-                        onSuccess={fetchGroups} // Recarrega lista ao salvar
-                        trigger={
-                          <Button variant="outline" className="flex-1">
-                            <Plus className="h-4 w-4 mr-2" />
-                            Despesa
-                          </Button>
-                        }
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
           </div>
 
-          {groups.length === 0 && (
-            <Card className="py-12">
-              <CardContent className="text-center">
-                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Nenhum grupo criado</h3>
-                <p className="text-muted-foreground mb-4">Crie seu primeiro grupo para começar a compartilhar despesas</p>
-                <AddGroupDialog
-                  onGroupCreated={fetchGroups}
-                  trigger={
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Criar Primeiro Grupo
-                    </Button>
-                  }
-                />
-              </CardContent>
-            </Card>
+          <EditGroupDialog groupId={editGroupId} isOpen={editDialogOpen} onClose={handleEditClose} onSuccess={fetchGroups} />
+
+          {selectedGroup && (
+            <GroupDetailsModal
+              isOpen={!!selectedGroup}
+              onClose={() => setSelectedGroup(null)}
+              groupId={selectedGroup.id}
+              groupName={selectedGroup.name}
+            />
           )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            <Card>
-              <CardContent className="p-4 md:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total de Grupos</p>
-                    <p className="text-2xl font-bold">{groups.length}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 md:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total de Membros</p>
-                    <p className="text-2xl font-bold">{groups.reduce((sum, g) => sum + g.members.length, 0)}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 md:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Saldo Total</p>
-                    <p className="text-2xl font-bold">
-                      {groups
-                        .reduce((sum, g) => sum + g.totalIncome + g.totalExpenses, 0)
-                        .toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                    </p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </div>
       </div>
-
-      <GroupDetailsModal
-        isOpen={!!selectedGroup}
-        onClose={() => setSelectedGroup(null)}
-        groupId={selectedGroup?.id || ""}
-        groupName={selectedGroup?.name || ""}
-      />
-
-      <EditGroupDialog groupId={editGroupId} isOpen={editDialogOpen} onClose={handleEditClose} onSuccess={fetchGroups} />
     </DashboardLayout>
   );
 };

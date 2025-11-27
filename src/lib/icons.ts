@@ -51,4 +51,7 @@ export {
   Camera,
   AlertTriangle,
   Loader2,
+  Copy,
+  Link,
+  Scale,
 } from "lucide-react";

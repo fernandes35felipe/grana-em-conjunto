@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Calendar as CalendarIcon, Layers } from "@/lib/icons";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers } from "@/lib/icons";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
@@ -25,7 +25,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-// Tipos extendidos
+// ... (Mantenha as interfaces Transaction, Event, DisplayItem iguais ao arquivo original)
 interface Transaction {
   id: string;
   description: string;
@@ -39,6 +39,7 @@ interface Transaction {
   is_fixed: boolean;
   is_recurring: boolean;
   recurrence_id: string | null;
+  created_by_name?: string; // Adicionado para mostrar quem criou
 }
 
 interface Event {
@@ -47,7 +48,6 @@ interface Event {
   description: string;
   date: string;
   totalAmount?: number;
-  // Calculado no frontend
 }
 
 type DisplayItem = { kind: "transaction"; data: Transaction } | { kind: "event"; data: Event };
@@ -70,16 +70,34 @@ const Transactions = () => {
   // Modais
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null); // Para abrir o modal do evento
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
   const { toast } = useToast();
 
+  // Carregamento inicial
   useEffect(() => {
     loadData();
   }, [dateRange]);
 
-  const loadData = async () => {
-    setLoading(true);
+  // --- REALTIME SUBSCRIPTION ---
+  useEffect(() => {
+    const channel = supabase
+      .channel("transactions-page-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => {
+        loadData(false); // false para não mostrar loading spinner
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => {
+        loadData(false);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [dateRange]);
+
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       await Promise.all([loadTransactions(), loadEvents()]);
     } finally {
@@ -89,8 +107,11 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
-      // Carrega TODAS as transações do período, inclusive as que estão dentro de eventos
-      let query = supabase.from("transactions").select(`*, groups!left (name)`).order("date", { ascending: false });
+      // Adicionado profiles!user_id (full_name) para pegar o nome de quem criou
+      let query = supabase
+        .from("transactions")
+        .select(`*, groups!left (name), profiles!user_id (full_name)`)
+        .order("date", { ascending: false });
 
       if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
@@ -110,6 +131,7 @@ const Transactions = () => {
           group_id: t.group_id,
           event_id: t.event_id,
           group_name: t.groups?.name,
+          created_by_name: t.profiles?.full_name, // Nome do criador
           is_fixed: t.is_fixed || false,
           is_recurring: t.is_recurring || false,
           recurrence_id: t.recurrence_id,
@@ -123,7 +145,6 @@ const Transactions = () => {
 
   const loadEvents = async () => {
     try {
-      // Carrega eventos que ocorreram neste período (data de referência)
       let query = supabase
         .from("events" as any)
         .select("*")
@@ -141,7 +162,7 @@ const Transactions = () => {
     }
   };
 
-  // Lógica de Deleção de Transação Simples
+  // ... (Mantenha handleDeleteClick, handleDeleteConfirm e updateEventTotals iguais)
   const handleDeleteClick = (transaction: Transaction) => {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
@@ -149,7 +170,6 @@ const Transactions = () => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
-
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -157,6 +177,7 @@ const Transactions = () => {
         await supabase.from("transactions").delete().eq("id", transactionToDelete.id);
       }
       toast({ title: "Sucesso", description: "Transação removida" });
+      // O realtime vai cuidar de atualizar, mas podemos forçar para feedback imediato local
       loadTransactions();
     } catch (error) {
       toast({ title: "Erro", description: "Erro ao remover", variant: "destructive" });
@@ -166,9 +187,6 @@ const Transactions = () => {
     }
   };
 
-  // --- Lógica de Mesclagem e Exibição ---
-
-  // 1. Calcular totais dos eventos para exibição no CARD DO EVENTO (Lista)
   useEffect(() => {
     if (events.length > 0) {
       updateEventTotals();
@@ -192,23 +210,14 @@ const Transactions = () => {
     }
   };
 
-  // 2. Preparar lista de exibição (Visual apenas)
+  // ... (Mantenha displayList igual)
   const displayList = useMemo(() => {
     const list: DisplayItem[] = [];
-
-    // Adiciona transações que NÃO têm event_id (transações soltas) na lista principal
     transactions.forEach((t) => {
-      if (!t.event_id) {
-        list.push({ kind: "transaction", data: t });
-      }
+      if (!t.event_id) list.push({ kind: "transaction", data: t });
     });
+    events.forEach((e) => list.push({ kind: "event", data: e }));
 
-    // Adiciona os eventos na lista principal
-    events.forEach((e) => {
-      list.push({ kind: "event", data: e });
-    });
-
-    // Filtros em memória
     return list
       .filter((item) => {
         if (item.kind === "transaction") {
@@ -221,22 +230,17 @@ const Transactions = () => {
             filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
           return matchesSearch && matchesType && matchesCategory && matchesGroup;
         } else {
-          // Filtros para eventos
-          const matchesSearch = item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
-          return matchesSearch;
+          return item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
         }
       })
       .sort((a, b) => {
         const dateA = new Date(a.kind === "transaction" ? a.data.date : a.data.date).getTime();
         const dateB = new Date(b.kind === "transaction" ? b.data.date : b.data.date).getTime();
-        return dateB - dateA; // Decrescente
+        return dateB - dateA;
       });
   }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup]);
 
-  // --- CÁLCULO DE TOTAIS CORRIGIDO ---
-  // Agora usamos a lista 'transactions' bruta (que contém tudo que ocorreu no mês)
-  // ao invés de usar 'displayList' (que contém objetos de Evento com totais acumulados)
-
+  // --- CÁLCULO DE TOTAIS (CORRIGIDO PARA SUBTRAIR) ---
   const totalIncome = transactions.reduce((acc, t) => {
     if (t.type === "income") return acc + t.amount;
     return acc;
@@ -247,9 +251,9 @@ const Transactions = () => {
     return acc;
   }, 0);
 
+  // Aqui está a correção principal do saldo da tela de Transações
   const balance = totalIncome - totalExpense;
 
-  // Filtra categorias vazias para evitar erro no Select do Shadcn
   const categories = Array.from(new Set(transactions.map((t) => t.category))).filter((cat) => cat && cat.trim() !== "");
 
   const clearFilters = () => {
@@ -262,16 +266,17 @@ const Transactions = () => {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
+        {/* ... (Cabeçalho e Filtros mantidos iguais) ... */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Transações</h1>
             <p className="text-muted-foreground">Gerencie suas entradas, saídas e eventos</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <AddEventDialog onSuccess={loadData} />
+            <AddEventDialog onSuccess={() => loadData()} />
             <AddTransactionDialog
               type="income"
-              onSuccess={loadData}
+              onSuccess={() => loadData()}
               trigger={
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" /> Receita
@@ -280,7 +285,7 @@ const Transactions = () => {
             />
             <AddTransactionDialog
               type="expense"
-              onSuccess={loadData}
+              onSuccess={() => loadData()}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" /> Despesa
@@ -314,7 +319,6 @@ const Transactions = () => {
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
                 </Select>
-
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
@@ -328,7 +332,6 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
-
                 <Select value={filterGroup} onValueChange={setFilterGroup}>
                   <SelectTrigger>
                     <SelectValue placeholder="Grupo" />
@@ -346,6 +349,7 @@ const Transactions = () => {
           </CardContent>
         </Card>
 
+        {/* Cards de Resumo */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="pb-3">
@@ -379,6 +383,7 @@ const Transactions = () => {
           </Card>
         </div>
 
+        {/* Lista */}
         <Card>
           <CardHeader>
             <CardTitle>Lançamentos</CardTitle>
@@ -394,7 +399,6 @@ const Transactions = () => {
               <div className="space-y-4">
                 {displayList.map((item) => {
                   if (item.kind === "event") {
-                    // Renderização do Card de Evento
                     const ev = item.data;
                     const total = ev.totalAmount || 0;
                     return (
@@ -425,7 +429,6 @@ const Transactions = () => {
                       </div>
                     );
                   } else {
-                    // Renderização da Transação Normal
                     const transaction = item.data;
                     return (
                       <div
@@ -471,6 +474,11 @@ const Transactions = () => {
                               <span className="text-xs text-muted-foreground">
                                 {new Date(transaction.date).toLocaleDateString("pt-BR")}
                               </span>
+                              {transaction.created_by_name && (
+                                <span className="text-[10px] text-muted-foreground italic">
+                                  • Por: {transaction.created_by_name.split(" ")[0]}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -497,7 +505,7 @@ const Transactions = () => {
           </CardContent>
         </Card>
 
-        {/* Modais */}
+        {/* Modais (Delete e Event) mantidos iguais */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -521,7 +529,7 @@ const Transactions = () => {
             eventName={selectedEvent.name}
             eventDate={selectedEvent.date}
             onUpdate={() => {
-              loadData();
+              loadData(false);
               updateEventTotals();
             }}
           />
