@@ -522,7 +522,6 @@ const Transactions = () => {
             eventDate={selectedEvent.date}
             onUpdate={() => {
               loadData();
-              // Recarrega lista principal ao mudar algo no modal
               updateEventTotals();
             }}
           />

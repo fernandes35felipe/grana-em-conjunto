@@ -49,5 +49,6 @@ export {
   Lock,
   Mail,
   Camera,
-  AlertTriangle
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
