@@ -14,9 +14,10 @@ import { formatDateForInput } from "@/utils/date/dateutils";
 interface AddEventDialogProps {
   trigger?: React.ReactNode;
   onSuccess?: () => void;
+  defaultGroupId?: string; // NOVO PROP
 }
 
-export const AddEventDialog = ({ trigger, onSuccess }: AddEventDialogProps) => {
+export const AddEventDialog = ({ trigger, onSuccess, defaultGroupId }: AddEventDialogProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -28,7 +29,6 @@ export const AddEventDialog = ({ trigger, onSuccess }: AddEventDialogProps) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!formData.name) {
       toast({
         title: "Erro",
@@ -48,13 +48,14 @@ export const AddEventDialog = ({ trigger, onSuccess }: AddEventDialogProps) => {
         name: sanitizeInput(formData.name),
         description: sanitizeInput(formData.description),
         date: formData.date,
+        group_id: defaultGroupId || null, // Salva o ID do grupo se existir
       });
 
       if (error) throw error;
 
       toast({
         title: "Sucesso",
-        description: "Evento criado com sucesso!",
+        description: defaultGroupId ? "Evento de grupo criado!" : "Evento criado com sucesso!",
       });
 
       setFormData({
@@ -88,7 +89,7 @@ export const AddEventDialog = ({ trigger, onSuccess }: AddEventDialogProps) => {
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Criar Novo Evento</DialogTitle>
+          <DialogTitle>Criar Novo Evento {defaultGroupId ? "do Grupo" : ""}</DialogTitle>
           <DialogDescription>Crie um evento para agrupar múltiplos lançamentos (ex: Viagem, Projeto).</DialogDescription>
         </DialogHeader>
 

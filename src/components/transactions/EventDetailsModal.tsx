@@ -15,6 +15,7 @@ interface EventDetailsModalProps {
   eventId: string;
   eventName: string;
   eventDate: string;
+  groupId?: string; // NOVO: Permite passar o grupo ao qual o evento pertence
   onUpdate?: () => void;
 }
 
@@ -27,7 +28,7 @@ interface Transaction {
   date: string;
 }
 
-export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDate, onUpdate }: EventDetailsModalProps) => {
+export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDate, groupId, onUpdate }: EventDetailsModalProps) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -37,7 +38,6 @@ export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDa
     setLoading(true);
     try {
       const { data, error } = await supabase.from("transactions").select("*").eq("event_id", eventId).order("date", { ascending: false });
-
       if (error) throw error;
 
       setTransactions(
@@ -84,7 +84,6 @@ export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDa
 
   const handleDeleteEvent = async () => {
     if (!confirm("Tem certeza? Isso apagará o evento e TODAS as transações dentro dele.")) return;
-
     try {
       const { error } = await supabase
         .from("events" as any)
@@ -125,6 +124,7 @@ export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDa
             <AddTransactionDialog
               type="expense"
               eventId={eventId}
+              defaultGroupId={groupId} // Passa o ID do grupo para vincular a transação
               onSuccess={() => {
                 loadEventTransactions();
                 if (onUpdate) onUpdate();
@@ -138,6 +138,7 @@ export const EventDetailsModal = ({ isOpen, onClose, eventId, eventName, eventDa
             <AddTransactionDialog
               type="income"
               eventId={eventId}
+              defaultGroupId={groupId} // Passa o ID do grupo para vincular a transação
               onSuccess={() => {
                 loadEventTransactions();
                 if (onUpdate) onUpdate();

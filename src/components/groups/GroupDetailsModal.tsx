@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// CORREÇÃO: Adicionado 'Users' na importação abaixo
 import {
   DollarSign,
   TrendingUp,
@@ -12,10 +13,9 @@ import {
   ArrowUpCircle,
   ArrowDownCircle,
   Plus,
+  Layers,
   User,
   Users,
-  Trash2,
-  Scale,
 } from "@/lib/icons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -23,18 +23,11 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
+import { DateFilter, DateRange } from "@/components/filters/DateFilter";
+import { startOfMonth, endOfMonth, format } from "@/lib/date";
+import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
+import { Separator } from "@/components/ui/separator";
 
 interface GroupDetailsModalProps {
   isOpen: boolean;
@@ -50,15 +43,7 @@ interface Transaction {
   type: "income" | "expense";
   category: string;
   date: string;
-  user_id: string; // Criador
-  payer_id: string; // Pagador
-  profiles: { full_name: string | null } | null; // Perfil do criador
-  payer_profile: { full_name: string | null } | null; // Perfil do pagador
-  transaction_splits: {
-    user_id: string;
-    amount: number;
-    profiles: { full_name: string | null } | null;
-  }[];
+  user_id: string;
 }
 
 interface Investment {
@@ -68,233 +53,201 @@ interface Investment {
   amount: number;
   current_value: number;
   created_at: string;
+  user_id: string;
 }
 
-interface Balance {
-  userId: string;
-  userName: string;
-  amount: number; // Positivo = A receber, Negativo = Deve
+interface GroupEvent {
+  id: string;
+  name: string;
+  description: string;
+  date: string;
+  totalAmount?: number;
 }
 
-interface GroupMetrics {
+interface Metrics {
   totalIncome: number;
   totalExpenses: number;
   totalInvestments: number;
   balance: number;
-  myIncome: number;
-  myExpenses: number;
-  myBalance: number;
 }
 
 export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: GroupDetailsModalProps) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
-  const [balances, setBalances] = useState<Balance[]>([]);
-  const [metrics, setMetrics] = useState<GroupMetrics>({
+  const [groupEvents, setGroupEvents] = useState<GroupEvent[]>([]);
+
+  // Métricas Gerais do Grupo
+  const [groupMetrics, setGroupMetrics] = useState<Metrics>({
     totalIncome: 0,
     totalExpenses: 0,
     totalInvestments: 0,
     balance: 0,
-    myIncome: 0,
-    myExpenses: 0,
-    myBalance: 0,
   });
+
+  // Métricas do Usuário Logado ("Minha Participação")
+  const [myMetrics, setMyMetrics] = useState<Metrics>({
+    totalIncome: 0,
+    totalExpenses: 0,
+    totalInvestments: 0,
+    balance: 0,
+  });
+
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
+
   const [loading, setLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-
-  const [deleteAlertOpen, setDeleteAlertOpen] = useState(false);
-  const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
-
+  const [selectedEvent, setSelectedEvent] = useState<GroupEvent | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (isOpen && groupId) loadGroupData();
-  }, [isOpen, groupId]);
-
-  // Realtime update
-  useEffect(() => {
-    if (!isOpen || !groupId) return;
-
-    const channel = supabase
-      .channel(`group-details-${groupId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `group_id=eq.${groupId}` }, () =>
-        loadGroupData()
-      )
-      .on("postgres_changes", { event: "*", schema: "public", table: "transaction_splits" }, () => loadGroupData())
-      .on("postgres_changes", { event: "*", schema: "public", table: "investments", filter: `group_id=eq.${groupId}` }, () =>
-        loadGroupData()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isOpen, groupId]);
+    if (isOpen && groupId) {
+      loadGroupData();
+    }
+  }, [isOpen, groupId, dateRange]);
 
   const loadGroupData = async () => {
     try {
       setLoading(true);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUser(user.id);
+      const currentUserId = user?.id;
 
-      // 1. Transactions - Query com nomes EXPLICITOS de constraints
+      const fromDate = format(dateRange.from, "yyyy-MM-dd");
+      const toDate = format(dateRange.to, "yyyy-MM-dd");
+
+      // 1. Carregar Transações
       const { data: transactionsData, error: transError } = await supabase
         .from("transactions")
-        .select(
-          `
-          *,
-          profiles:profiles!transactions_user_id_fkey (full_name),
-          payer_profile:profiles!transactions_payer_id_fkey (full_name),
-          transaction_splits (
-            user_id,
-            amount,
-            profiles:profiles!transaction_splits_user_id_fkey (full_name)
-          )
-        `
-        )
+        .select("*")
         .eq("group_id", groupId)
+        .gte("date", fromDate)
+        .lte("date", toDate)
         .order("date", { ascending: false });
 
       if (transError) throw transError;
 
-      // 2. Investments
+      // 2. Carregar Investimentos
       const { data: investmentsData, error: invError } = await supabase
         .from("investments")
         .select("*")
         .eq("group_id", groupId)
+        .gte("created_at", `${fromDate}T00:00:00`)
+        .lte("created_at", `${toDate}T23:59:59`)
         .order("created_at", { ascending: false });
 
       if (invError) throw invError;
 
-      // Format Data
-      const formattedTransactions: Transaction[] = (transactionsData || []).map((t: any) => ({
-        id: t.id,
-        description: t.description,
-        amount: Number(t.amount),
-        type: t.type,
-        category: t.category,
-        date: t.date,
-        user_id: t.user_id,
-        payer_id: t.payer_id || t.user_id, // Fallback vital se payer_id for null
-        profiles: t.profiles,
-        payer_profile: t.payer_profile || t.profiles, // Fallback vital para o perfil
-        transaction_splits: t.transaction_splits || [],
-      }));
+      // 3. Carregar Eventos
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events" as any)
+        .select("*")
+        .eq("group_id", groupId)
+        .gte("date", fromDate)
+        .lte("date", toDate)
+        .order("date", { ascending: false });
 
-      const formattedInvestments: Investment[] = (investmentsData || []).map((i: any) => ({
-        id: i.id,
-        name: i.name,
-        type: i.type,
-        amount: Number(i.amount),
-        current_value: Number(i.current_value),
-        created_at: i.created_at,
-      }));
+      if (eventsError) throw eventsError;
+
+      // Calcular totais dos eventos
+      let eventsWithTotals: GroupEvent[] = [];
+      if (eventsData && eventsData.length > 0) {
+        const eventIds = eventsData.map((e) => e.id);
+        const { data: eventTrans } = await supabase.from("transactions").select("event_id, amount, type").in("event_id", eventIds);
+
+        eventsWithTotals = eventsData.map((ev) => {
+          const evT = eventTrans?.filter((t) => t.event_id === ev.id) || [];
+          const total = evT.reduce((acc, t) => acc + (t.type === "income" ? t.amount : -Math.abs(t.amount)), 0);
+          return {
+            id: ev.id,
+            name: ev.name,
+            description: ev.description,
+            date: ev.date,
+            totalAmount: total,
+          };
+        });
+      }
+
+      const formattedTransactions =
+        transactionsData?.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type as "income" | "expense",
+          category: t.category,
+          date: t.date,
+          user_id: t.user_id,
+        })) || [];
+
+      const formattedInvestments =
+        investmentsData?.map((i) => ({
+          id: i.id,
+          name: i.name,
+          type: i.type,
+          amount: Number(i.amount),
+          current_value: Number(i.current_value),
+          created_at: i.created_at,
+          user_id: i.user_id,
+        })) || [];
 
       setTransactions(formattedTransactions);
       setInvestments(formattedInvestments);
+      setGroupEvents(eventsWithTotals);
 
-      // --- CÁLCULO DE SALDOS (NET BALANCES) ---
-      const balancesMap = new Map<string, { name: string; amount: number }>();
+      // --- CÁLCULO DE MÉTRICAS GERAIS ---
+      const gIncome = formattedTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+      const gExpenses = formattedTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+      const gInvestments = formattedInvestments.reduce((sum, i) => sum + i.current_value, 0);
 
-      formattedTransactions.forEach((t) => {
-        if (t.type === "expense") {
-          const amount = Math.abs(t.amount);
-
-          // Quem pagou recebe crédito (+)
-          const payerId = t.payer_id;
-          const payerName = t.payer_profile?.full_name || "Desconhecido";
-
-          if (!balancesMap.has(payerId)) balancesMap.set(payerId, { name: payerName, amount: 0 });
-          balancesMap.get(payerId)!.amount += amount;
-
-          // Quem dividiu recebe débito (-)
-          if (t.transaction_splits.length > 0) {
-            t.transaction_splits.forEach((split) => {
-              const consumerId = split.user_id;
-              const consumerName = split.profiles?.full_name || "Desconhecido";
-
-              if (!balancesMap.has(consumerId)) balancesMap.set(consumerId, { name: consumerName, amount: 0 });
-              balancesMap.get(consumerId)!.amount -= split.amount;
-            });
-          } else {
-            // Sem split explícito = despesa pessoal do pagador (anula efeito no saldo do grupo)
-            balancesMap.get(payerId)!.amount -= amount;
-          }
-        }
+      setGroupMetrics({
+        totalIncome: gIncome,
+        totalExpenses: gExpenses,
+        totalInvestments: gInvestments,
+        balance: gIncome - gExpenses,
       });
 
-      const balancesArray = Array.from(balancesMap.entries())
-        .map(([userId, data]) => ({
-          userId,
-          userName: data.name,
-          amount: data.amount,
-        }))
-        .filter((b) => Math.abs(b.amount) > 0.01) // Filtra saldos zerados
-        .sort((a, b) => b.amount - a.amount);
+      // --- CÁLCULO DE "MINHA PARTICIPAÇÃO" ---
+      if (currentUserId) {
+        const myTrans = formattedTransactions.filter((t) => t.user_id === currentUserId);
+        const myInvs = formattedInvestments.filter((i) => i.user_id === currentUserId);
 
-      setBalances(balancesArray);
+        const mIncome = myTrans.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+        const mExpenses = myTrans.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+        const mInvestments = myInvs.reduce((sum, i) => sum + i.current_value, 0);
 
-      // --- CÁLCULOS DE MÉTRICAS ---
-      const income = formattedTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-      const expenses = formattedTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0);
-      const totalInvestments = formattedInvestments.reduce((sum, i) => sum + i.current_value, 0);
-
-      let myIncome = 0;
-      let myExpenses = 0;
-
-      formattedTransactions.forEach((t) => {
-        const mySplit = t.transaction_splits.find((split) => split.user_id === user.id);
-
-        if (mySplit) {
-          // Se estou nos splits, uso o valor do meu split
-          if (t.type === "income") myIncome += mySplit.amount;
-          else myExpenses += mySplit.amount;
-        } else if (t.transaction_splits.length === 0 && t.user_id === user.id) {
-          // Se não tem splits e fui eu que criei, considero meu
-          if (t.type === "income") myIncome += t.amount;
-          else myExpenses += Math.abs(t.amount);
-        }
-      });
-
-      setMetrics({
-        totalIncome: income,
-        totalExpenses: expenses,
-        totalInvestments,
-        balance: income - expenses,
-        myIncome,
-        myExpenses,
-        myBalance: myIncome - myExpenses,
-      });
+        setMyMetrics({
+          totalIncome: mIncome,
+          totalExpenses: mExpenses,
+          totalInvestments: mInvestments,
+          balance: mIncome - mExpenses,
+        });
+      }
     } catch (error) {
       console.error("Erro ao carregar dados do grupo:", error);
-      toast({ variant: "destructive", title: "Erro", description: "Erro ao carregar dados do grupo." });
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível carregar os dados do grupo",
+      });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!transactionToDelete) return;
-    try {
-      const { error } = await supabase.from("transactions").delete().eq("id", transactionToDelete);
-      if (error) throw error;
-      toast({ title: "Removido", description: "Lançamento removido." });
-      loadGroupData();
-    } catch {
-      toast({ variant: "destructive", title: "Erro", description: "Erro ao remover." });
-    } finally {
-      setDeleteAlertOpen(false);
     }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Grupo: {groupName}</DialogTitle>
+        <DialogHeader className="flex flex-col gap-4 pr-8">
+          <div className="flex flex-row items-center justify-between">
+            <DialogTitle>Detalhes do Grupo: {groupName}</DialogTitle>
+          </div>
+
+          <div className="flex justify-end">
+            <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+          </div>
         </DialogHeader>
 
         <div className="flex gap-2 mb-4 flex-wrap">
@@ -304,7 +257,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
             onSuccess={loadGroupData}
             trigger={
               <Button variant="destructive" size="sm">
-                <Plus className="h-4 w-4 mr-2" /> Despesa
+                <Plus className="h-4 w-4 mr-2" /> Nova Despesa
               </Button>
             }
           />
@@ -314,7 +267,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
             onSuccess={loadGroupData}
             trigger={
               <Button variant="default" size="sm" className="bg-success hover:bg-success/90">
-                <Plus className="h-4 w-4 mr-2" /> Receita
+                <Plus className="h-4 w-4 mr-2" /> Nova Receita
               </Button>
             }
           />
@@ -323,253 +276,279 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
             onSuccess={loadGroupData}
             trigger={
               <Button variant="outline" size="sm">
-                <PiggyBank className="h-4 w-4 mr-2" /> Investir
+                <PiggyBank className="h-4 w-4 mr-2" /> Novo Investimento
+              </Button>
+            }
+          />
+          <AddEventDialog
+            defaultGroupId={groupId}
+            onSuccess={loadGroupData}
+            trigger={
+              <Button variant="outline" size="sm">
+                <Calendar className="h-4 w-4 mr-2" /> Novo Evento
               </Button>
             }
           />
         </div>
 
         {loading ? (
-          <div className="text-center py-10">Carregando...</div>
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />
+            ))}
+          </div>
         ) : (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Total Despesas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-xl font-bold text-destructive">
-                    {metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Minha Parte</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-xl font-bold text-destructive">
-                    {metrics.myExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Investimentos</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-xl font-bold text-accent">
-                    {metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Saldo Líquido</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className={cn("text-xl font-bold", metrics.balance >= 0 ? "text-success" : "text-destructive")}>
-                    {metrics.balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="space-y-8">
+            {/* SEÇÃO: MINHA PARTICIPAÇÃO */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                <User className="h-4 w-4" /> Minha Participação
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Minhas Receitas</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-success" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-success">
+                      {myMetrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Minhas Despesas</CardTitle>
+                    <TrendingDown className="h-4 w-4 text-destructive" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-destructive">
+                      {myMetrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Meus Investimentos</CardTitle>
+                    <PiggyBank className="h-4 w-4 text-accent" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold">
+                      {myMetrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Meu Saldo</CardTitle>
+                    <DollarSign className="h-4 w-4 text-primary" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className={cn("text-xl font-bold", myMetrics.balance >= 0 ? "text-success" : "text-destructive")}>
+                      {myMetrics.balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
 
+            <Separator />
+
+            {/* SEÇÃO: TOTAL DO GRUPO */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                <Users className="h-4 w-4" /> Total do Grupo
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Receitas</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-success" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-success">
+                      {groupMetrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Despesas</CardTitle>
+                    <TrendingDown className="h-4 w-4 text-destructive" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-destructive">
+                      {groupMetrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Investimentos</CardTitle>
+                    <PiggyBank className="h-4 w-4 text-accent" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {groupMetrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Saldo</CardTitle>
+                    <DollarSign className="h-4 w-4 text-primary" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className={cn("text-2xl font-bold", groupMetrics.balance >= 0 ? "text-success" : "text-destructive")}>
+                      {groupMetrics.balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* Abas */}
             <Tabs defaultValue="transactions" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="transactions">Transações</TabsTrigger>
-                <TabsTrigger value="balances">Saldos & Dívidas</TabsTrigger>
+                <TabsTrigger value="events">Eventos</TabsTrigger>
                 <TabsTrigger value="investments">Investimentos</TabsTrigger>
               </TabsList>
 
-              {/* ABA TRANSAÇÕES */}
               <TabsContent value="transactions" className="space-y-4">
-                {transactions.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Sem lançamentos.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {transactions.map((t) => {
-                      const isPayer = t.payer_id === currentUser;
-                      const mySplit = t.transaction_splits.find((s) => s.user_id === currentUser);
-
-                      return (
-                        <div key={t.id} className="flex flex-col gap-2 p-4 rounded-lg border bg-card hover:bg-accent/5 transition-colors">
-                          <div className="flex justify-between items-start">
-                            <div className="flex gap-3">
-                              <div
-                                className={cn(
-                                  "p-2 rounded-full h-fit",
-                                  t.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-                                )}
-                              >
-                                {t.type === "income" ? <ArrowUpCircle className="h-5 w-5" /> : <ArrowDownCircle className="h-5 w-5" />}
-                              </div>
-                              <div>
-                                <p className="font-medium">{t.description}</p>
-                                <div className="text-xs text-muted-foreground flex flex-col gap-1">
-                                  <span>
-                                    {new Date(t.date).toLocaleDateString("pt-BR")} • {t.category}
-                                  </span>
-                                  <span className="text-foreground/80">
-                                    Pago por <strong>{isPayer ? "Você" : t.payer_profile?.full_name?.split(" ")[0]}</strong>
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold">{t.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
-                              {mySplit && (
-                                <p className="text-xs text-muted-foreground">
-                                  Sua parte:{" "}
-                                  <span className="text-destructive">
-                                    {mySplit.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                                  </span>
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex justify-between items-center pt-2 border-t mt-1">
-                            <div className="flex -space-x-2">
-                              {t.transaction_splits.length > 0 ? (
-                                t.transaction_splits.map((split, i) => (
-                                  <TooltipProvider key={i}>
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <Avatar className="h-6 w-6 border-2 border-background">
-                                          <AvatarFallback className="text-[9px] bg-primary/20">
-                                            {split.profiles?.full_name?.charAt(0)}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p className="text-xs">
-                                          {split.profiles?.full_name}:{" "}
-                                          {split.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                ))
-                              ) : (
-                                <span className="text-xs text-muted-foreground italic pl-1">Sem divisões (individual)</span>
-                              )}
-                            </div>
-                            {(isPayer || currentUser === t.user_id) && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                onClick={() => {
-                                  setTransactionToDelete(t.id);
-                                  setDeleteAlertOpen(true);
-                                }}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* ABA SALDOS (NET BALANCES) */}
-              <TabsContent value="balances" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Scale className="h-5 w-5" /> Saldos Líquidos
+                      <Calendar className="h-5 w-5" />
+                      Transações do Grupo
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {balances.length === 0 ? (
-                      <p className="text-center text-muted-foreground">Todos estão quites.</p>
+                    {transactions.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Nenhuma transação encontrada neste período.</p>
                     ) : (
-                      <div className="space-y-4">
-                        {balances.map((balance) => {
-                          const isMe = balance.userId === currentUser;
-                          const statusColor =
-                            balance.amount > 0 ? "text-success" : balance.amount < 0 ? "text-destructive" : "text-muted-foreground";
-                          const statusText = balance.amount > 0 ? "deve receber" : balance.amount < 0 ? "deve" : "está quite";
-
-                          return (
-                            <div key={balance.userId} className="flex items-center justify-between p-3 border-b last:border-0">
-                              <div className="flex items-center gap-3">
-                                <Avatar>
-                                  <AvatarFallback>{balance.userName?.charAt(0) || "?"}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium text-sm">{isMe ? "Você" : balance.userName}</p>
-                                  <p className={cn("text-xs font-bold", statusColor)}>
-                                    {statusText}{" "}
-                                    {balance.amount !== 0 &&
-                                      Math.abs(balance.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                                  </p>
-                                </div>
+                      <div className="space-y-3">
+                        {transactions.map((transaction) => (
+                          <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={cn(
+                                  "p-2 rounded-full",
+                                  transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                                )}
+                              >
+                                {transaction.type === "income" ? (
+                                  <ArrowUpCircle className="h-4 w-4" />
+                                ) : (
+                                  <ArrowDownCircle className="h-4 w-4" />
+                                )}
                               </div>
-                              {balance.amount !== 0 && (
-                                <Badge
-                                  variant={balance.amount > 0 ? "outline" : "destructive"}
-                                  className={balance.amount > 0 ? "text-success border-success" : ""}
-                                >
-                                  {balance.amount > 0 ? "+" : "-"}
-                                  {Math.abs(balance.amount).toFixed(2)}
+                              <div>
+                                <p className="font-medium">{transaction.description}</p>
+                                <Badge variant="secondary" className="text-xs mt-1">
+                                  {transaction.category}
                                 </Badge>
-                              )}
+                              </div>
                             </div>
-                          );
-                        })}
+                            <div className="text-right">
+                              <p className={cn("font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                                {transaction.type === "income" ? "+" : ""}
+                                {transaction.amount.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
+                                })}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </CardContent>
                 </Card>
               </TabsContent>
 
-              {/* ABA INVESTIMENTOS */}
+              <TabsContent value="events" className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Layers className="h-5 w-5" />
+                      Eventos do Grupo
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {groupEvents.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Nenhum evento encontrado neste período.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {groupEvents.map((ev) => (
+                          <div
+                            key={ev.id}
+                            className="flex items-center justify-between p-4 rounded-lg border bg-accent/5 hover:bg-accent/10 border-l-4 border-l-primary cursor-pointer transition-all"
+                            onClick={() => setSelectedEvent(ev)}
+                          >
+                            <div className="flex items-center gap-4">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-bold text-primary">{ev.name}</p>
+                                </div>
+                                <span className="text-xs text-muted-foreground">{new Date(ev.date).toLocaleDateString("pt-BR")}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <p className={cn("font-semibold text-lg", (ev.totalAmount || 0) >= 0 ? "text-success" : "text-destructive")}>
+                                {(ev.totalAmount || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
               <TabsContent value="investments" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <PiggyBank className="h-5 w-5" /> Investimentos do Grupo
+                      <PiggyBank className="h-5 w-5" />
+                      Investimentos do Grupo
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {investments.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">Nenhum investimento encontrado</p>
+                      <p className="text-center text-muted-foreground py-8">Nenhum investimento encontrado neste período.</p>
                     ) : (
                       <div className="space-y-3">
                         {investments.map((investment) => (
-                          <div
-                            key={investment.id}
-                            className="flex items-center justify-between p-3 rounded-lg border border-border bg-card"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-full bg-accent/10 text-accent">
-                                <TrendingUp className="h-4 w-4" />
-                              </div>
-                              <div>
-                                <p className="font-medium">{investment.name}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="secondary" className="text-xs">
-                                    {investment.type}
-                                  </Badge>
-                                  <span className="text-xs text-muted-foreground">
-                                    {new Date(investment.created_at).toLocaleDateString("pt-BR")}
-                                  </span>
-                                </div>
+                          <div key={investment.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                            <div>
+                              <p className="font-medium">{investment.name}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="secondary" className="text-xs">
+                                  {investment.type}
+                                </Badge>
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="font-semibold text-foreground">
-                                {investment.current_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              <p className="font-semibold">
+                                {investment.current_value.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
+                                })}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Aplicado: {investment.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                Aplicado:{" "}
+                                {investment.amount.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
+                                })}
                               </p>
+                              <p className="text-xs text-muted-foreground">{new Date(investment.created_at).toLocaleDateString("pt-BR")}</p>
                             </div>
                           </div>
                         ))}
@@ -582,18 +561,19 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
           </div>
         )}
 
-        <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Excluir?</AlertDialogTitle>
-              <AlertDialogDescription>Ação irreversível.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteConfirm}>Excluir</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {selectedEvent && (
+          <EventDetailsModal
+            isOpen={!!selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+            eventId={selectedEvent.id}
+            eventName={selectedEvent.name}
+            eventDate={selectedEvent.date}
+            groupId={groupId}
+            onUpdate={() => {
+              loadGroupData();
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
