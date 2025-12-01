@@ -77,11 +77,8 @@ const Dashboard = () => {
 
       const totalInvestments = investments?.reduce((sum, inv) => sum + Number(inv.current_value), 0) || 0;
 
-      // CORREÇÃO MATEMÁTICA AQUI:
-      // Saldo = Receitas - Despesas - Investimentos (se considerar investimento como saída de caixa)
-      // Se 'totalInvestments' for o valor acumulado total da carteira, ele não deve ser subtraído do fluxo de caixa mensal,
-      // mas vamos assumir Saldo Líquido do mês = Entradas - Saídas.
-      const balance = income - expenses;
+      //O valor do saldo é receita - despesa. Como as despesas são negativas, somamos os valores (saldo = receita + despesa negativa)
+      const balance = income + expenses;
 
       setMetrics({
         totalBalance: balance,

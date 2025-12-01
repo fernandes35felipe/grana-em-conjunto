@@ -206,7 +206,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
         totalIncome: gIncome,
         totalExpenses: gExpenses,
         totalInvestments: gInvestments,
-        balance: gIncome - gExpenses,
+        balance: gIncome + gExpenses,
       });
 
       // --- CÁLCULO DE "MINHA PARTICIPAÇÃO" ---
@@ -222,7 +222,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
           totalIncome: mIncome,
           totalExpenses: mExpenses,
           totalInvestments: mInvestments,
-          balance: mIncome - mExpenses,
+          balance: mIncome + mExpenses,
         });
       }
     } catch (error) {
