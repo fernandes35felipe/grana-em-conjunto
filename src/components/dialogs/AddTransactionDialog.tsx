@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CreditCard } from "@/lib/icons";
+import { CreditCard, Repeat } from "@/lib/icons";
 
 import { useToast } from "@/hooks/use-toast";
 import { useReminders } from "@/hooks/useReminders";
@@ -207,7 +207,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       }
 
       // Configuração de pendência
-      // Se for cartão de crédito, é sempre "payable" (a pagar) e pendente
       const isPending = values.is_credit_card ? true : values.is_pending;
       const pendingType = isPending ? (type === "income" ? "receivable" : "payable") : null;
       const paidAt = isPending ? null : formatDateTimeForDatabase(values.date + "T12:00:00");
@@ -226,7 +225,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
         event_id: eventId ? sanitizeUUID(eventId) : null,
         // Credit Card Fields
         is_credit_card: Boolean(values.is_credit_card),
-        total_installments: values.is_credit_card ? Math.max(1, sanitizeInteger(values.installments)) : null,
+        total_installments: values.is_credit_card && !values.is_fixed ? Math.max(1, sanitizeInteger(values.installments)) : null,
         card_closing_date: values.is_credit_card ? sanitizeDate(values.card_closing_date) : null,
       };
 
@@ -239,43 +238,45 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
           const recurrenceId = values.is_recurring || values.is_fixed ? crypto.randomUUID() : null;
           const recurrenceCount = sanitizeInteger(values.recurrence_count);
 
-          // Lógica de Repetição (Loop)
-          // Se for cartão parcelado, loop = numero de parcelas
-          // Se for fixo/recorrente, loop = configurações de recorrência
-
           let loopCount = 1;
-          if (sanitizedData.is_credit_card && (sanitizedData.total_installments || 0) > 1) {
-            loopCount = sanitizedData.total_installments || 1;
+          let isInstallment = false;
+
+          if (sanitizedData.is_credit_card) {
+            if (values.is_fixed) {
+              // Cartão + Fixo (Assinatura) = 12 meses, valor cheio
+              loopCount = 12;
+            } else if ((sanitizedData.total_installments || 0) > 1) {
+              // Cartão + Parcelado = N meses, valor dividido
+              loopCount = sanitizedData.total_installments || 1;
+              isInstallment = true;
+            }
           } else if (values.is_fixed) {
             loopCount = 12;
           } else if (values.is_recurring) {
             loopCount = recurrenceCount;
           }
 
-          const baseDate = new Date(values.date + "T00:00:00"); // Data da compra
+          const baseDate = new Date(values.date + "T00:00:00");
           const baseClosingDate = values.is_credit_card ? new Date(values.card_closing_date + "T00:00:00") : null;
 
-          // Valor da parcela
-          const installmentAmount = sanitizedData.is_credit_card ? amount / loopCount : amount; // Se não for parcelado, o valor é cheio a cada repetição
+          // Valor do lançamento (dividido se for parcela, cheio se for assinatura ou normal)
+          const installmentAmount = sanitizedData.is_credit_card && isInstallment ? amount / loopCount : amount;
 
           for (let i = 0; i < loopCount; i++) {
             let transactionDate: Date;
             let description = sanitizedData.description;
 
-            // Se for cartão, a data da transação no banco (vencimento) é baseada na data de vencimento da fatura
-            // Se não, é baseada na data da compra/recorrência
             if (sanitizedData.is_credit_card && baseClosingDate) {
               transactionDate = addMonths(baseClosingDate, i);
-              if (loopCount > 1) {
+              if (isInstallment) {
                 description = `${sanitizedData.description} (${i + 1}/${loopCount})`;
               }
+              // Se for Fixo no Cartão (assinatura), mantém o nome original sem (1/12)
             } else {
               transactionDate = addMonths(baseDate, i);
             }
 
             const formattedDate = formatDateForDatabase(transactionDate);
-
-            // Ajuste data de pagamento se não for pendente
             const currentPaidAt = sanitizedData.is_pending ? null : new Date(transactionDate.setHours(12)).toISOString();
 
             const { data: transData, error: transError } = await supabase
@@ -288,7 +289,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                 type,
                 category: sanitizedData.category,
                 group_id: sanitizedData.group_id,
-                date: formattedDate, // Data de vencimento para cartão, Data da transação para outros
+                date: formattedDate,
                 is_recurring: sanitizedData.is_recurring,
                 is_fixed: sanitizedData.is_fixed,
                 is_pending: sanitizedData.is_pending,
@@ -300,8 +301,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                 // Campos de Cartão
                 is_credit_card: sanitizedData.is_credit_card,
                 card_closing_date: formattedDate,
-                installment_number: sanitizedData.is_credit_card ? i + 1 : null,
-                total_installments: sanitizedData.total_installments,
+                installment_number: sanitizedData.is_credit_card && isInstallment ? i + 1 : null,
+                total_installments: isInstallment ? sanitizedData.total_installments : null,
               })
               .select()
               .single();
@@ -320,7 +321,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
               if (splitError) throw splitError;
             }
 
-            // Cria lembrete apenas para a primeira ocorrência se solicitado
             if (i === 0 && reminderData.enabled && reminderData.reminder_date && transData) {
               const reminderDateTime = formatDateTimeForDatabase(reminderData.reminder_date);
               await createReminder(
@@ -528,21 +528,43 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                           onChange={(e) => handleInputChange({ target: { name: "card_closing_date", value: e.target.value } } as any)}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="installments">Parcelas</Label>
-                        <Input
-                          id="installments"
-                          type="number"
-                          min="1"
-                          max="60"
-                          value={values.installments}
-                          onChange={(e) => handleInputChange({ target: { name: "installments", value: e.target.value } } as any)}
+
+                      {!values.is_fixed ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="installments">Parcelas</Label>
+                          <Input
+                            id="installments"
+                            type="number"
+                            min="1"
+                            max="60"
+                            value={values.installments}
+                            onChange={(e) => handleInputChange({ target: { name: "installments", value: e.target.value } } as any)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">Assinatura Recorrente</span>
+                        </div>
+                      )}
+
+                      <div className="col-span-2 flex items-center justify-between bg-muted/50 p-2 rounded">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="is_fixed_card" className="flex items-center gap-2 text-xs">
+                            <Repeat className="h-3 w-3" />
+                            Assinatura / Fixa
+                          </Label>
+                        </div>
+                        <Switch
+                          id="is_fixed_card"
+                          checked={values.is_fixed}
+                          onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
                         />
                       </div>
-                      {values.installments > 1 && (
+
+                      {!values.is_fixed && values.installments > 1 && (
                         <p className="text-xs text-muted-foreground col-span-2">
-                          Serão gerados {values.installments} lançamentos de{" "}
-                          {(values.amount / values.installments).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} cada.
+                          {values.installments}x de{" "}
+                          {(values.amount / values.installments).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                         </p>
                       )}
                     </div>
