@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers, CheckCircle2, XCircle, Edit } from "@/lib/icons";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers, CheckCircle2, XCircle, Edit, CreditCard } from "@/lib/icons";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
@@ -7,6 +7,7 @@ import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
 import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { EditTransactionDialog } from "@/components/dialogs/EditTransactionDialog";
 import { PendingSummaryCard } from "@/components/dashboard/PendingSummaryCard";
+import { CreditCardSummary } from "@/components/dashboard/CreditCardSummary";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,7 @@ interface Transaction {
   is_pending: boolean;
   pending_type?: "payable" | "receivable" | null;
   paid_at?: string | null;
+  is_credit_card: boolean;
 }
 
 interface Event {
@@ -67,6 +69,7 @@ const Transactions = () => {
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterGroup, setFilterGroup] = useState("all");
   const [onlyPending, setOnlyPending] = useState(false);
+  const [onlyCreditCard, setOnlyCreditCard] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -137,6 +140,7 @@ const Transactions = () => {
           is_pending: t.is_pending || false,
           pending_type: t.pending_type as "payable" | "receivable" | null,
           paid_at: t.paid_at,
+          is_credit_card: t.is_credit_card || false,
         })) || [];
 
       setTransactions(formattedData);
@@ -246,7 +250,8 @@ const Transactions = () => {
       }
     });
 
-    if (!onlyPending) {
+    // Se estiver filtrando por cartão, ocultamos eventos para focar nos lançamentos de fatura
+    if (!onlyPending && !onlyCreditCard) {
       events.forEach((e) => {
         list.push({ kind: "event", data: e });
       });
@@ -263,8 +268,9 @@ const Transactions = () => {
           const matchesGroup =
             filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
           const matchesPending = !onlyPending || item.data.is_pending;
+          const matchesCreditCard = !onlyCreditCard || item.data.is_credit_card;
 
-          return matchesSearch && matchesType && matchesCategory && matchesGroup && matchesPending;
+          return matchesSearch && matchesType && matchesCategory && matchesGroup && matchesPending && matchesCreditCard;
         } else {
           return item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
         }
@@ -274,7 +280,7 @@ const Transactions = () => {
         const dateB = new Date(b.kind === "transaction" ? b.data.date : b.data.date).getTime();
         return dateB - dateA;
       });
-  }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup, onlyPending]);
+  }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup, onlyPending, onlyCreditCard]);
 
   const completedTransactions = transactions.filter((t) => !t.is_pending);
 
@@ -293,6 +299,7 @@ const Transactions = () => {
     setFilterCategory("all");
     setFilterGroup("all");
     setOnlyPending(false);
+    setOnlyCreditCard(false);
   };
 
   return (
@@ -335,13 +342,13 @@ const Transactions = () => {
           <CardContent>
             <div className="space-y-4">
               <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-                <div className="relative md:col-span-2">
+              <div className="flex flex-col md:flex-row gap-4 flex-wrap">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
                 </div>
                 <Select value={filterType} onValueChange={setFilterType}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder="Tipo" />
                   </SelectTrigger>
                   <SelectContent>
@@ -351,7 +358,7 @@ const Transactions = () => {
                   </SelectContent>
                 </Select>
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-[160px]">
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
                   <SelectContent>
@@ -363,7 +370,7 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <div className="flex items-center space-x-2 border rounded-md px-3 h-10">
+                <div className="flex items-center space-x-2 border rounded-md px-3 h-10 bg-background">
                   <Toggle
                     pressed={onlyPending}
                     onPressedChange={setOnlyPending}
@@ -371,6 +378,17 @@ const Transactions = () => {
                     className="w-full h-full data-[state=on]:bg-orange-100 data-[state=on]:text-orange-900"
                   >
                     Pendentes
+                  </Toggle>
+                </div>
+                <div className="flex items-center space-x-2 border rounded-md px-3 h-10 bg-background">
+                  <Toggle
+                    pressed={onlyCreditCard}
+                    onPressedChange={setOnlyCreditCard}
+                    size="sm"
+                    className="w-full h-full data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                  >
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    Cartão
                   </Toggle>
                 </div>
                 <Button variant="outline" onClick={clearFilters}>
@@ -381,7 +399,7 @@ const Transactions = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">Total Receitas</CardTitle>
@@ -412,6 +430,7 @@ const Transactions = () => {
               </div>
             </CardContent>
           </Card>
+          <CreditCardSummary />
           <PendingSummaryCard pendingIncome={pendingIncome} pendingExpense={pendingExpense} isLoading={loading} />
         </div>
 
@@ -490,6 +509,12 @@ const Transactions = () => {
                               {transaction.is_pending && (
                                 <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-100 text-[10px]">
                                   Pendente
+                                </Badge>
+                              )}
+                              {transaction.is_credit_card && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <CreditCard className="h-3 w-3 mr-1" />
+                                  Cartão
                                 </Badge>
                               )}
                               {transaction.is_fixed && (

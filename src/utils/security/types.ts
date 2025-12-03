@@ -19,6 +19,11 @@ export interface TransactionData {
   recurrence_count?: number | null;
   recurrence_id?: string | null;
   event_id?: string | null;
+  // Novos campos de Cartão de Crédito
+  is_credit_card?: boolean;
+  card_closing_date?: string | null;
+  installment_number?: number | null;
+  total_installments?: number | null;
 }
 
 export interface InvestmentData {

@@ -12,6 +12,7 @@ import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { supabase } from "@/integrations/supabase/client";
 import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
 import { PendingSummaryCard } from "@/components/dashboard/PendingSummaryCard";
+import { CreditCardSummary } from "@/components/dashboard/CreditCardSummary";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -100,9 +101,9 @@ const Dashboard = () => {
           <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {loading ? (
-            [...Array(4)].map((_, i) => <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />)
+            [...Array(5)].map((_, i) => <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />)
           ) : (
             <>
               <MetricCard
@@ -112,17 +113,18 @@ const Dashboard = () => {
                 changeType={metrics.totalBalance >= 0 ? "positive" : "negative"}
               />
               <MetricCard
-                title="Receitas Recebidas"
+                title="Receitas"
                 value={metrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingUp className="h-5 w-5 text-success" />}
                 changeType="positive"
               />
               <MetricCard
-                title="Despesas Pagas"
+                title="Despesas"
                 value={metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingDown className="h-5 w-5 text-destructive" />}
                 changeType="negative"
               />
+              <CreditCardSummary />
               <PendingSummaryCard pendingIncome={metrics.pendingIncome} pendingExpense={metrics.pendingExpense} isLoading={loading} />
             </>
           )}
