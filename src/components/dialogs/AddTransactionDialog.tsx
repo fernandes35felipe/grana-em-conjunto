@@ -52,7 +52,6 @@ interface TransactionFormData {
   is_fixed: boolean;
   is_pending: boolean;
   recurrence_count: number;
-  // Credit Card specific
   is_credit_card: boolean;
   installments: number;
   card_closing_date: string;
@@ -206,7 +205,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
         throw new Error("Selecione pelo menos um membro para dividir.");
       }
 
-      // Configuração de pendência
       const isPending = values.is_credit_card ? true : values.is_pending;
       const pendingType = isPending ? (type === "income" ? "receivable" : "payable") : null;
       const paidAt = isPending ? null : formatDateTimeForDatabase(values.date + "T12:00:00");
@@ -223,7 +221,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
         pending_type: pendingType,
         paid_at: paidAt,
         event_id: eventId ? sanitizeUUID(eventId) : null,
-        // Credit Card Fields
         is_credit_card: Boolean(values.is_credit_card),
         total_installments: values.is_credit_card && !values.is_fixed ? Math.max(1, sanitizeInteger(values.installments)) : null,
         card_closing_date: values.is_credit_card ? sanitizeDate(values.card_closing_date) : null,
@@ -235,7 +232,12 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       await withRateLimit(
         `transaction:${userId}`,
         async () => {
-          const recurrenceId = values.is_recurring || values.is_fixed ? crypto.randomUUID() : null;
+          // CORREÇÃO AQUI: Gerar recurrenceId também para parcelamentos de cartão (> 1 parcela)
+          const shouldGenerateRecurrenceId =
+            values.is_recurring || values.is_fixed || (values.is_credit_card && (values.installments > 1 || values.is_fixed));
+
+          const recurrenceId = shouldGenerateRecurrenceId ? crypto.randomUUID() : null;
+
           const recurrenceCount = sanitizeInteger(values.recurrence_count);
 
           let loopCount = 1;
@@ -243,10 +245,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
           if (sanitizedData.is_credit_card) {
             if (values.is_fixed) {
-              // Cartão + Fixo (Assinatura) = 12 meses, valor cheio
-              loopCount = 12;
+              loopCount = 12; // Assinatura
             } else if ((sanitizedData.total_installments || 0) > 1) {
-              // Cartão + Parcelado = N meses, valor dividido
               loopCount = sanitizedData.total_installments || 1;
               isInstallment = true;
             }
@@ -259,7 +259,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
           const baseDate = new Date(values.date + "T00:00:00");
           const baseClosingDate = values.is_credit_card ? new Date(values.card_closing_date + "T00:00:00") : null;
 
-          // Valor do lançamento (dividido se for parcela, cheio se for assinatura ou normal)
           const installmentAmount = sanitizedData.is_credit_card && isInstallment ? amount / loopCount : amount;
 
           for (let i = 0; i < loopCount; i++) {
@@ -271,7 +270,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
               if (isInstallment) {
                 description = `${sanitizedData.description} (${i + 1}/${loopCount})`;
               }
-              // Se for Fixo no Cartão (assinatura), mantém o nome original sem (1/12)
             } else {
               transactionDate = addMonths(baseDate, i);
             }
@@ -298,7 +296,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                 recurrence_id: recurrenceId,
                 recurrence_count: recurrenceCount,
                 event_id: sanitizedData.event_id,
-                // Campos de Cartão
                 is_credit_card: sanitizedData.is_credit_card,
                 card_closing_date: formattedDate,
                 installment_number: sanitizedData.is_credit_card && isInstallment ? i + 1 : null,

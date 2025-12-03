@@ -203,7 +203,11 @@ const Transactions = () => {
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
     try {
-      if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
+      // CORREÇÃO: Verificar se possui recurrence_id e se é do tipo que deve apagar em massa (fixo, recorrente ou cartão)
+      if (
+        transactionToDelete.recurrence_id &&
+        (transactionToDelete.is_fixed || transactionToDelete.is_recurring || transactionToDelete.is_credit_card)
+      ) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
       } else {
         await supabase.from("transactions").delete().eq("id", transactionToDelete.id);
@@ -250,7 +254,6 @@ const Transactions = () => {
       }
     });
 
-    // Se estiver filtrando por cartão, ocultamos eventos para focar nos lançamentos de fatura
     if (!onlyPending && !onlyCreditCard) {
       events.forEach((e) => {
         list.push({ kind: "event", data: e });
@@ -459,7 +462,7 @@ const Transactions = () => {
                       >
                         <div className="flex items-center gap-4">
                           <div className="p-2 rounded-full bg-primary/20 text-primary">
-                            <Layers className="h-5 w-5" />
+                            <Layers className="h-5 w-5 text-primary" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
@@ -600,7 +603,10 @@ const Transactions = () => {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-              <AlertDialogDescription>Tem certeza que deseja remover esta transação?</AlertDialogDescription>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover esta transação?
+                {transactionToDelete?.recurrence_id && " Isto removerá todas as parcelas/ocorrências associadas."}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
