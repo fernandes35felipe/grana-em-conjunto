@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-// CORREÇÃO: Adicionado 'Users' na importação abaixo
 import {
   DollarSign,
   TrendingUp,
@@ -16,18 +15,24 @@ import {
   Layers,
   User,
   Users,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Edit,
 } from "@/lib/icons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { EditTransactionDialog } from "@/components/dialogs/EditTransactionDialog";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { Separator } from "@/components/ui/separator";
+import { Toggle } from "@/components/ui/toggle";
 
 interface GroupDetailsModalProps {
   isOpen: boolean;
@@ -44,6 +49,7 @@ interface Transaction {
   category: string;
   date: string;
   user_id: string;
+  is_pending: boolean;
 }
 
 interface Investment {
@@ -69,27 +75,32 @@ interface Metrics {
   totalExpenses: number;
   totalInvestments: number;
   balance: number;
+  pendingIncome: number;
+  pendingExpense: number;
 }
 
 export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: GroupDetailsModalProps) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [groupEvents, setGroupEvents] = useState<GroupEvent[]>([]);
+  const [showPending, setShowPending] = useState(false);
 
-  // Métricas Gerais do Grupo
   const [groupMetrics, setGroupMetrics] = useState<Metrics>({
     totalIncome: 0,
     totalExpenses: 0,
     totalInvestments: 0,
     balance: 0,
+    pendingIncome: 0,
+    pendingExpense: 0,
   });
 
-  // Métricas do Usuário Logado ("Minha Participação")
   const [myMetrics, setMyMetrics] = useState<Metrics>({
     totalIncome: 0,
     totalExpenses: 0,
     totalInvestments: 0,
     balance: 0,
+    pendingIncome: 0,
+    pendingExpense: 0,
   });
 
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -99,6 +110,8 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
   const [loading, setLoading] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<GroupEvent | null>(null);
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -119,7 +132,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
       const fromDate = format(dateRange.from, "yyyy-MM-dd");
       const toDate = format(dateRange.to, "yyyy-MM-dd");
 
-      // 1. Carregar Transações
       const { data: transactionsData, error: transError } = await supabase
         .from("transactions")
         .select("*")
@@ -130,7 +142,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
       if (transError) throw transError;
 
-      // 2. Carregar Investimentos
       const { data: investmentsData, error: invError } = await supabase
         .from("investments")
         .select("*")
@@ -141,7 +152,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
       if (invError) throw invError;
 
-      // 3. Carregar Eventos
       const { data: eventsData, error: eventsError } = await supabase
         .from("events" as any)
         .select("*")
@@ -152,7 +162,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
       if (eventsError) throw eventsError;
 
-      // Calcular totais dos eventos
       let eventsWithTotals: GroupEvent[] = [];
       if (eventsData && eventsData.length > 0) {
         const eventIds = eventsData.map((e) => e.id);
@@ -180,6 +189,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
           category: t.category,
           date: t.date,
           user_id: t.user_id,
+          is_pending: t.is_pending || false,
         })) || [];
 
       const formattedInvestments =
@@ -197,36 +207,50 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
       setInvestments(formattedInvestments);
       setGroupEvents(eventsWithTotals);
 
-      // --- CÁLCULO DE MÉTRICAS GERAIS ---
-      const gIncome = formattedTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-      const gExpenses = formattedTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+      // Métricas do Grupo (Separando pendentes de realizados)
+      const gRealized = formattedTransactions.filter((t) => !t.is_pending);
+      const gPending = formattedTransactions.filter((t) => t.is_pending);
+
+      const gIncome = gRealized.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+      const gExpenses = gRealized.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
       const gInvestments = formattedInvestments.reduce((sum, i) => sum + i.current_value, 0);
+
+      const gPendingIncome = gPending.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+      const gPendingExpense = gPending.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
       setGroupMetrics({
         totalIncome: gIncome,
         totalExpenses: gExpenses,
         totalInvestments: gInvestments,
         balance: gIncome + gExpenses,
+        pendingIncome: gPendingIncome,
+        pendingExpense: gPendingExpense,
       });
 
-      // --- CÁLCULO DE "MINHA PARTICIPAÇÃO" ---
+      // Métricas do Usuário (Separando pendentes de realizados)
       if (currentUserId) {
-        const myTrans = formattedTransactions.filter((t) => t.user_id === currentUserId);
+        const myTrans = formattedTransactions.filter((t) => t.user_id === currentUserId && !t.is_pending);
+        const myPendingTrans = formattedTransactions.filter((t) => t.user_id === currentUserId && t.is_pending);
         const myInvs = formattedInvestments.filter((i) => i.user_id === currentUserId);
 
         const mIncome = myTrans.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-        const mExpenses = myTrans.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+        const mExpenses = myTrans.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0); // amount é negativo
         const mInvestments = myInvs.reduce((sum, i) => sum + i.current_value, 0);
+
+        const mPendingIncome = myPendingTrans.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+        const mPendingExpense = myPendingTrans.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
         setMyMetrics({
           totalIncome: mIncome,
           totalExpenses: mExpenses,
           totalInvestments: mInvestments,
           balance: mIncome + mExpenses,
+          pendingIncome: mPendingIncome,
+          pendingExpense: mPendingExpense,
         });
       }
     } catch (error) {
-      console.error("Erro ao carregar dados do grupo:", error);
+      console.error(error);
       toast({
         variant: "destructive",
         title: "Erro",
@@ -237,6 +261,29 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
     }
   };
 
+  const handleToggleStatus = async (transaction: Transaction) => {
+    try {
+      const newIsPending = !transaction.is_pending;
+      const updates: any = { is_pending: newIsPending };
+
+      if (newIsPending) {
+        updates.paid_at = null;
+        updates.pending_type = transaction.type === "income" ? "receivable" : "payable";
+      } else {
+        updates.paid_at = new Date().toISOString();
+        updates.pending_type = null;
+      }
+
+      const { error } = await supabase.from("transactions").update(updates).eq("id", transaction.id);
+
+      if (error) throw error;
+      toast({ title: "Atualizado", description: "Status alterado com sucesso" });
+      loadGroupData();
+    } catch {
+      toast({ title: "Erro", description: "Falha ao atualizar", variant: "destructive" });
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -244,7 +291,6 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
           <div className="flex flex-row items-center justify-between">
             <DialogTitle>Detalhes do Grupo: {groupName}</DialogTitle>
           </div>
-
           <div className="flex justify-end">
             <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
           </div>
@@ -293,8 +339,8 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
 
         {loading ? (
           <div className="space-y-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-32 bg-muted rounded animate-pulse" />
             ))}
           </div>
         ) : (
@@ -304,7 +350,7 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
               <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
                 <User className="h-4 w-4" /> Minha Participação
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card className="bg-primary/5 border-primary/20">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Minhas Receitas</CardTitle>
@@ -327,14 +373,17 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="bg-primary/5 border-primary/20">
+                <Card className="bg-orange-50/80 dark:bg-orange-950/20 border-orange-200/80">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Meus Investimentos</CardTitle>
-                    <PiggyBank className="h-4 w-4 text-accent" />
+                    <CardTitle className="text-sm font-medium text-orange-700 dark:text-orange-400">Meus Pendentes</CardTitle>
+                    <Clock className="h-4 w-4 text-orange-500" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-xl font-bold">
-                      {myMetrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    <div className="text-sm font-medium text-orange-600">
+                      Receber: {myMetrics.pendingIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                    <div className="text-sm font-medium text-destructive/80">
+                      Pagar: {myMetrics.pendingExpense.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </div>
                   </CardContent>
                 </Card>
@@ -359,11 +408,10 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
               <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
                 <Users className="h-4 w-4" /> Total do Grupo
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Receitas</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-success" />
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Receitas (Realizado)</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-success">
@@ -371,11 +419,9 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                     </div>
                   </CardContent>
                 </Card>
-
                 <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Despesas</CardTitle>
-                    <TrendingDown className="h-4 w-4 text-destructive" />
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Despesas (Pago)</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-destructive">
@@ -383,23 +429,22 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                     </div>
                   </CardContent>
                 </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Investimentos</CardTitle>
-                    <PiggyBank className="h-4 w-4 text-accent" />
+                <Card className="bg-orange-50 dark:bg-orange-950/20 border-orange-200">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-orange-700 dark:text-orange-400">A Pagar/Receber</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">
-                      {groupMetrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    <div className="text-sm font-medium text-orange-600">
+                      Receber: {groupMetrics.pendingIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </div>
+                    <div className="text-sm font-medium text-destructive/80">
+                      Pagar: {groupMetrics.pendingExpense.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </div>
                   </CardContent>
                 </Card>
-
                 <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Saldo</CardTitle>
-                    <DollarSign className="h-4 w-4 text-primary" />
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Saldo Final</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className={cn("text-2xl font-bold", groupMetrics.balance >= 0 ? "text-success" : "text-destructive")}>
@@ -410,152 +455,135 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
               </div>
             </div>
 
-            {/* Abas */}
+            <Separator />
+
             <Tabs defaultValue="transactions" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="transactions">Transações</TabsTrigger>
-                <TabsTrigger value="events">Eventos</TabsTrigger>
-                <TabsTrigger value="investments">Investimentos</TabsTrigger>
-              </TabsList>
+              <div className="flex justify-between items-center mb-4">
+                <TabsList>
+                  <TabsTrigger value="transactions">Transações</TabsTrigger>
+                  <TabsTrigger value="events">Eventos</TabsTrigger>
+                  <TabsTrigger value="investments">Investimentos</TabsTrigger>
+                </TabsList>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-muted-foreground">Mostrar Pendentes</span>
+                  <Toggle
+                    pressed={showPending}
+                    onPressedChange={setShowPending}
+                    variant="outline"
+                    size="sm"
+                    className="data-[state=on]:bg-orange-100 data-[state=on]:text-orange-900"
+                  >
+                    <Clock className="h-4 w-4" />
+                  </Toggle>
+                </div>
+              </div>
 
               <TabsContent value="transactions" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      Transações do Grupo
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {transactions.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">Nenhuma transação encontrada neste período.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {transactions.map((transaction) => (
-                          <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={cn(
-                                  "p-2 rounded-full",
-                                  transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-                                )}
-                              >
-                                {transaction.type === "income" ? (
-                                  <ArrowUpCircle className="h-4 w-4" />
-                                ) : (
-                                  <ArrowDownCircle className="h-4 w-4" />
-                                )}
-                              </div>
-                              <div>
-                                <p className="font-medium">{transaction.description}</p>
+                {transactions.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Nenhuma transação encontrada.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {transactions
+                      .filter((t) => showPending || !t.is_pending)
+                      .map((transaction) => (
+                        <div
+                          key={transaction.id}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-lg border",
+                            transaction.is_pending ? "bg-orange-50/50 border-orange-200" : "border-border"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={cn(
+                                "p-2 rounded-full",
+                                transaction.type === "income" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                              )}
+                            >
+                              {transaction.type === "income" ? (
+                                <ArrowUpCircle className="h-4 w-4" />
+                              ) : (
+                                <ArrowDownCircle className="h-4 w-4" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium">{transaction.description}</p>
+                              <div className="flex items-center gap-2">
                                 <Badge variant="secondary" className="text-xs mt-1">
                                   {transaction.category}
                                 </Badge>
+                                {transaction.is_pending && (
+                                  <Badge variant="outline" className="text-xs mt-1 text-orange-600 bg-orange-100 border-orange-200">
+                                    Pendente
+                                  </Badge>
+                                )}
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className={cn("font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
-                                {transaction.type === "income" ? "+" : ""}
-                                {transaction.amount.toLocaleString("pt-BR", {
-                                  style: "currency",
-                                  currency: "BRL",
-                                })}
-                              </p>
-                              <p className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</p>
-                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                          <div className="flex items-center gap-3">
+                            <p
+                              className={cn(
+                                "font-semibold",
+                                transaction.type === "income" ? "text-success" : "text-destructive",
+                                transaction.is_pending && "opacity-60"
+                              )}
+                            >
+                              {transaction.type === "income" ? "+" : ""}
+                              {Math.abs(transaction.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleToggleStatus(transaction)}
+                              className={
+                                transaction.is_pending ? "text-orange-500 hover:text-orange-600" : "text-success hover:text-success/80"
+                              }
+                            >
+                              {transaction.is_pending ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setTransactionToEdit(transaction);
+                                setEditDialogOpen(true);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="events" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Layers className="h-5 w-5" />
-                      Eventos do Grupo
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {groupEvents.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">Nenhum evento encontrado neste período.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {groupEvents.map((ev) => (
-                          <div
-                            key={ev.id}
-                            className="flex items-center justify-between p-4 rounded-lg border bg-accent/5 hover:bg-accent/10 border-l-4 border-l-primary cursor-pointer transition-all"
-                            onClick={() => setSelectedEvent(ev)}
-                          >
-                            <div className="flex items-center gap-4">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <p className="font-bold text-primary">{ev.name}</p>
-                                </div>
-                                <span className="text-xs text-muted-foreground">{new Date(ev.date).toLocaleDateString("pt-BR")}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <p className={cn("font-semibold text-lg", (ev.totalAmount || 0) >= 0 ? "text-success" : "text-destructive")}>
-                                {(ev.totalAmount || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
+                {groupEvents.map((ev) => (
+                  <div
+                    key={ev.id}
+                    onClick={() => setSelectedEvent(ev)}
+                    className="flex items-center justify-between p-4 rounded-lg border bg-accent/5 hover:bg-accent/10 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Layers className="h-5 w-5 text-primary" />
+                      <div>
+                        <p className="font-bold">{ev.name}</p>
+                        <span className="text-xs text-muted-foreground">{new Date(ev.date).toLocaleDateString("pt-BR")}</span>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                    <p className="font-semibold">{(ev.totalAmount || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+                  </div>
+                ))}
               </TabsContent>
 
               <TabsContent value="investments" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <PiggyBank className="h-5 w-5" />
-                      Investimentos do Grupo
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {investments.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">Nenhum investimento encontrado neste período.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {investments.map((investment) => (
-                          <div key={investment.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
-                            <div>
-                              <p className="font-medium">{investment.name}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant="secondary" className="text-xs">
-                                  {investment.type}
-                                </Badge>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold">
-                                {investment.current_value.toLocaleString("pt-BR", {
-                                  style: "currency",
-                                  currency: "BRL",
-                                })}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                Aplicado:{" "}
-                                {investment.amount.toLocaleString("pt-BR", {
-                                  style: "currency",
-                                  currency: "BRL",
-                                })}
-                              </p>
-                              <p className="text-xs text-muted-foreground">{new Date(investment.created_at).toLocaleDateString("pt-BR")}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                {investments.map((inv) => (
+                  <div key={inv.id} className="flex justify-between p-3 border rounded-lg">
+                    <span>{inv.name}</span>
+                    <span className="font-bold">{inv.current_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                  </div>
+                ))}
               </TabsContent>
             </Tabs>
           </div>
@@ -569,11 +597,19 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
             eventName={selectedEvent.name}
             eventDate={selectedEvent.date}
             groupId={groupId}
-            onUpdate={() => {
-              loadGroupData();
-            }}
+            onUpdate={loadGroupData}
           />
         )}
+
+        <EditTransactionDialog
+          transaction={transactionToEdit}
+          isOpen={editDialogOpen}
+          onClose={() => {
+            setEditDialogOpen(false);
+            setTransactionToEdit(null);
+          }}
+          onSuccess={loadGroupData}
+        />
       </DialogContent>
     </Dialog>
   );

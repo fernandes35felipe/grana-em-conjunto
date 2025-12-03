@@ -54,4 +54,7 @@ export {
   Copy,
   Link,
   Scale,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";

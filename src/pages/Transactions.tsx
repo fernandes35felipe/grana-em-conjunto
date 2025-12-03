@@ -1,16 +1,19 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Calendar as CalendarIcon, Layers } from "@/lib/icons";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers, CheckCircle2, XCircle, Edit } from "@/lib/icons";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
 import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
+import { EditTransactionDialog } from "@/components/dialogs/EditTransactionDialog";
+import { PendingSummaryCard } from "@/components/dashboard/PendingSummaryCard";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Toggle } from "@/components/ui/toggle";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +28,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-// Tipos extendidos
 interface Transaction {
   id: string;
   description: string;
@@ -39,6 +41,10 @@ interface Transaction {
   is_fixed: boolean;
   is_recurring: boolean;
   recurrence_id: string | null;
+  created_by_name?: string;
+  is_pending: boolean;
+  pending_type?: "payable" | "receivable" | null;
+  paid_at?: string | null;
 }
 
 interface Event {
@@ -47,7 +53,6 @@ interface Event {
   description: string;
   date: string;
   totalAmount?: number;
-  // Calculado no frontend
 }
 
 type DisplayItem = { kind: "transaction"; data: Transaction } | { kind: "event"; data: Event };
@@ -57,20 +62,21 @@ const Transactions = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterGroup, setFilterGroup] = useState("all");
+  const [onlyPending, setOnlyPending] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
   });
 
-  // Modais
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null); // Para abrir o modal do evento
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -78,8 +84,20 @@ const Transactions = () => {
     loadData();
   }, [dateRange]);
 
-  const loadData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const channel = supabase
+      .channel("transactions-page-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => loadData(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => loadData(false))
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [dateRange]);
+
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       await Promise.all([loadTransactions(), loadEvents()]);
     } finally {
@@ -89,20 +107,9 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
-      // CORREÇÃO AQUI:
-      // 1. Usamos 'transactions_user_id_fkey' para dizer explicitamente que queremos o perfil do CRIADOR (user_id),
-      //    evitando o erro de relacionamento ambíguo (PGRST201) com payer_id.
-      // 2. Usamos 'groups!left' para garantir que transações SEM grupo (pessoais) também venham (Left Join).
-      //    Se fosse apenas 'groups' ou 'groups!inner', traria apenas transações que TEM grupo.
       let query = supabase
         .from("transactions")
-        .select(
-          `
-          *,
-          groups!left (name),
-          profiles!transactions_user_id_fkey (full_name)
-        `
-        )
+        .select(`*, groups!left (name), profiles!transactions_user_id_fkey (full_name)`)
         .order("date", { ascending: false });
 
       if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
@@ -123,9 +130,13 @@ const Transactions = () => {
           group_id: t.group_id,
           event_id: t.event_id,
           group_name: t.groups?.name,
+          created_by_name: t.profiles?.full_name,
           is_fixed: t.is_fixed || false,
           is_recurring: t.is_recurring || false,
           recurrence_id: t.recurrence_id,
+          is_pending: t.is_pending || false,
+          pending_type: t.pending_type as "payable" | "receivable" | null,
+          paid_at: t.paid_at,
         })) || [];
 
       setTransactions(formattedData);
@@ -136,7 +147,6 @@ const Transactions = () => {
 
   const loadEvents = async () => {
     try {
-      // Carrega eventos que ocorreram neste período (data de referência)
       let query = supabase
         .from("events" as any)
         .select("*")
@@ -154,7 +164,33 @@ const Transactions = () => {
     }
   };
 
-  // Lógica de Deleção de Transação Simples
+  const handleToggleStatus = async (transaction: Transaction) => {
+    try {
+      const newIsPending = !transaction.is_pending;
+      const updates: any = { is_pending: newIsPending };
+
+      if (newIsPending) {
+        updates.paid_at = null;
+        updates.pending_type = transaction.type === "income" ? "receivable" : "payable";
+      } else {
+        updates.paid_at = new Date().toISOString();
+        updates.pending_type = null;
+      }
+
+      const { error } = await supabase.from("transactions").update(updates).eq("id", transaction.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Status atualizado",
+        description: `Transação marcada como ${newIsPending ? "pendente" : "concluída"}`,
+      });
+      loadTransactions();
+    } catch (error) {
+      toast({ title: "Erro", description: "Falha ao atualizar status", variant: "destructive" });
+    }
+  };
+
   const handleDeleteClick = (transaction: Transaction) => {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
@@ -162,7 +198,6 @@ const Transactions = () => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
-
     try {
       if (transactionToDelete.is_fixed && transactionToDelete.recurrence_id) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -179,9 +214,6 @@ const Transactions = () => {
     }
   };
 
-  // --- Lógica de Mesclagem e Exibição ---
-
-  // 1. Calcular totais dos eventos para exibição no CARD DO EVENTO (Lista)
   useEffect(() => {
     if (events.length > 0) {
       updateEventTotals();
@@ -205,23 +237,21 @@ const Transactions = () => {
     }
   };
 
-  // 2. Preparar lista de exibição (Visual apenas)
   const displayList = useMemo(() => {
     const list: DisplayItem[] = [];
 
-    // Adiciona transações que NÃO têm event_id (transações soltas) na lista principal
     transactions.forEach((t) => {
       if (!t.event_id) {
         list.push({ kind: "transaction", data: t });
       }
     });
 
-    // Adiciona os eventos na lista principal
-    events.forEach((e) => {
-      list.push({ kind: "event", data: e });
-    });
+    if (!onlyPending) {
+      events.forEach((e) => {
+        list.push({ kind: "event", data: e });
+      });
+    }
 
-    // Filtros em memória
     return list
       .filter((item) => {
         if (item.kind === "transaction") {
@@ -232,34 +262,29 @@ const Transactions = () => {
           const matchesCategory = filterCategory === "all" || item.data.category === filterCategory;
           const matchesGroup =
             filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
-          return matchesSearch && matchesType && matchesCategory && matchesGroup;
+          const matchesPending = !onlyPending || item.data.is_pending;
+
+          return matchesSearch && matchesType && matchesCategory && matchesGroup && matchesPending;
         } else {
-          // Filtros para eventos
-          const matchesSearch = item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
-          return matchesSearch;
+          return item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
         }
       })
       .sort((a, b) => {
         const dateA = new Date(a.kind === "transaction" ? a.data.date : a.data.date).getTime();
         const dateB = new Date(b.kind === "transaction" ? b.data.date : b.data.date).getTime();
-        return dateB - dateA; // Decrescente
+        return dateB - dateA;
       });
-  }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup]);
+  }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup, onlyPending]);
 
-  // --- CÁLCULO DE TOTAIS ---
-  const totalIncome = transactions.reduce((acc, t) => {
-    if (t.type === "income") return acc + t.amount;
-    return acc;
-  }, 0);
+  const completedTransactions = transactions.filter((t) => !t.is_pending);
 
-  const totalExpense = transactions.reduce((acc, t) => {
-    if (t.type === "expense") return acc + Math.abs(t.amount);
-    return acc;
-  }, 0);
-
+  const totalIncome = completedTransactions.reduce((acc, t) => (t.type === "income" ? acc + t.amount : acc), 0);
+  const totalExpense = completedTransactions.reduce((acc, t) => (t.type === "expense" ? acc + Math.abs(t.amount) : acc), 0);
   const balance = totalIncome - totalExpense;
 
-  // Filtra categorias vazias para evitar erro no Select do Shadcn
+  const pendingIncome = transactions.filter((t) => t.is_pending && t.type === "income").reduce((acc, t) => acc + t.amount, 0);
+  const pendingExpense = transactions.filter((t) => t.is_pending && t.type === "expense").reduce((acc, t) => acc + Math.abs(t.amount), 0);
+
   const categories = Array.from(new Set(transactions.map((t) => t.category))).filter((cat) => cat && cat.trim() !== "");
 
   const clearFilters = () => {
@@ -267,6 +292,7 @@ const Transactions = () => {
     setFilterType("all");
     setFilterCategory("all");
     setFilterGroup("all");
+    setOnlyPending(false);
   };
 
   return (
@@ -278,10 +304,10 @@ const Transactions = () => {
             <p className="text-muted-foreground">Gerencie suas entradas, saídas e eventos</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <AddEventDialog onSuccess={loadData} />
+            <AddEventDialog onSuccess={() => loadData()} />
             <AddTransactionDialog
               type="income"
-              onSuccess={loadData}
+              onSuccess={() => loadData()}
               trigger={
                 <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" /> Receita
@@ -290,7 +316,7 @@ const Transactions = () => {
             />
             <AddTransactionDialog
               type="expense"
-              onSuccess={loadData}
+              onSuccess={() => loadData()}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4 mr-2" /> Despesa
@@ -309,8 +335,8 @@ const Transactions = () => {
           <CardContent>
             <div className="space-y-4">
               <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div className="relative">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <div className="relative md:col-span-2">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
                 </div>
@@ -324,7 +350,6 @@ const Transactions = () => {
                     <SelectItem value="expense">Despesas</SelectItem>
                   </SelectContent>
                 </Select>
-
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Categoria" />
@@ -338,16 +363,16 @@ const Transactions = () => {
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Select value={filterGroup} onValueChange={setFilterGroup}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Grupo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="none">Pessoal</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center space-x-2 border rounded-md px-3 h-10">
+                  <Toggle
+                    pressed={onlyPending}
+                    onPressedChange={setOnlyPending}
+                    size="sm"
+                    className="w-full h-full data-[state=on]:bg-orange-100 data-[state=on]:text-orange-900"
+                  >
+                    Pendentes
+                  </Toggle>
+                </div>
                 <Button variant="outline" onClick={clearFilters}>
                   Limpar
                 </Button>
@@ -356,7 +381,7 @@ const Transactions = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">Total Receitas</CardTitle>
@@ -379,7 +404,7 @@ const Transactions = () => {
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Saldo</CardTitle>
+              <CardTitle className="text-sm font-medium">Saldo Realizado</CardTitle>
             </CardHeader>
             <CardContent>
               <div className={cn("text-2xl font-bold", balance >= 0 ? "text-success" : "text-destructive")}>
@@ -387,6 +412,7 @@ const Transactions = () => {
               </div>
             </CardContent>
           </Card>
+          <PendingSummaryCard pendingIncome={pendingIncome} pendingExpense={pendingExpense} isLoading={loading} />
         </div>
 
         <Card>
@@ -404,7 +430,6 @@ const Transactions = () => {
               <div className="space-y-4">
                 {displayList.map((item) => {
                   if (item.kind === "event") {
-                    // Renderização do Card de Evento
                     const ev = item.data;
                     const total = ev.totalAmount || 0;
                     return (
@@ -435,12 +460,16 @@ const Transactions = () => {
                       </div>
                     );
                   } else {
-                    // Renderização da Transação Normal
                     const transaction = item.data;
                     return (
                       <div
                         key={transaction.id}
-                        className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
+                        className={cn(
+                          "flex items-center justify-between p-4 rounded-lg border transition-colors",
+                          transaction.is_pending
+                            ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800"
+                            : "hover:bg-accent/50"
+                        )}
                       >
                         <div className="flex items-center gap-4">
                           <div
@@ -458,6 +487,11 @@ const Transactions = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{transaction.description}</p>
+                              {transaction.is_pending && (
+                                <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-100 text-[10px]">
+                                  Pendente
+                                </Badge>
+                              )}
                               {transaction.is_fixed && (
                                 <Badge variant="outline" className="text-xs">
                                   Fixo
@@ -484,11 +518,41 @@ const Transactions = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <p className={cn("font-semibold text-lg", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                        <div className="flex items-center gap-3">
+                          <p
+                            className={cn(
+                              "font-semibold text-lg",
+                              transaction.type === "income" ? "text-success" : "text-destructive",
+                              transaction.is_pending && "opacity-60"
+                            )}
+                          >
                             {transaction.type === "income" ? "+" : "-"}
                             {Math.abs(transaction.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </p>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleToggleStatus(transaction)}
+                            title={transaction.is_pending ? "Marcar como pago/recebido" : "Marcar como pendente"}
+                            className={
+                              transaction.is_pending ? "text-orange-500 hover:text-orange-600" : "text-success hover:text-success/80"
+                            }
+                          >
+                            {transaction.is_pending ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setTransactionToEdit(transaction);
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+
                           <Button
                             variant="ghost"
                             size="icon"
@@ -507,7 +571,6 @@ const Transactions = () => {
           </CardContent>
         </Card>
 
-        {/* Modais */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -530,14 +593,23 @@ const Transactions = () => {
             eventId={selectedEvent.id}
             eventName={selectedEvent.name}
             eventDate={selectedEvent.date}
-            // Verifica se o objeto de evento tem group_id (pode precisar ajustar a interface Event se ainda não tiver)
             groupId={(selectedEvent as any).group_id}
             onUpdate={() => {
-              loadData();
+              loadData(false);
               updateEventTotals();
             }}
           />
         )}
+
+        <EditTransactionDialog
+          transaction={transactionToEdit}
+          isOpen={editDialogOpen}
+          onClose={() => {
+            setEditDialogOpen(false);
+            setTransactionToEdit(null);
+          }}
+          onSuccess={() => loadData(false)}
+        />
       </div>
     </DashboardLayout>
   );

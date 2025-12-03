@@ -13,9 +13,12 @@ export interface TransactionData {
   user_id?: string | null;
   is_recurring?: boolean;
   is_fixed?: boolean;
+  is_pending?: boolean;
+  pending_type?: "payable" | "receivable" | null;
+  paid_at?: string | null;
   recurrence_count?: number | null;
   recurrence_id?: string | null;
-  event_id?: string | null; // Adicionado
+  event_id?: string | null;
 }
 
 export interface InvestmentData {

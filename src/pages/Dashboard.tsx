@@ -5,13 +5,13 @@ import { TransactionsList } from "@/components/dashboard/TransactionsList";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
-import { DollarSign, TrendingUp, TrendingDown, PiggyBank, Filter } from "@/lib/icons";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import { FixedBalanceCard } from "@/components/dashboard/FixedBalanceCard";
+import { PendingSummaryCard } from "@/components/dashboard/PendingSummaryCard";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -23,61 +23,53 @@ const Dashboard = () => {
     totalIncome: 0,
     totalExpenses: 0,
     totalInvestments: 0,
+    pendingIncome: 0,
+    pendingExpense: 0,
   });
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
 
-  // Carrega dados iniciais e sempre que a data mudar
   useEffect(() => {
     loadMetrics();
   }, [dateRange]);
 
-  // CONFIGURAÇÃO DO REALTIME (TEMPO REAL)
   useEffect(() => {
-    // Inscreve-se para ouvir mudanças nas tabelas
     const channel = supabase
       .channel("dashboard-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, (payload) => {
-        console.log("Mudança detectada em transações:", payload);
-        loadMetrics(); // Recarrega os dados quando houver mudança
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "investments" }, () => {
-        loadMetrics();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => loadMetrics())
+      .on("postgres_changes", { event: "*", schema: "public", table: "investments" }, () => loadMetrics())
       .subscribe();
 
-    // Limpeza ao sair da página
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [dateRange]); // Dependência dateRange garante que o reload use as datas certas
+  }, [dateRange]);
 
   const loadMetrics = async () => {
     try {
-      // Não ativamos o setLoading(true) aqui para evitar "piscar" a tela em atualizações automáticas
-      // Apenas na primeira carga ou mudança de data manual pode ser interessante,
-      // mas para realtime é melhor ser silencioso.
-
       const { data: transactions, error: transError } = await supabase
         .from("transactions")
-        .select("amount, type, date")
+        .select("amount, type, date, is_pending")
         .gte("date", format(dateRange.from, "yyyy-MM-dd"))
         .lte("date", format(dateRange.to, "yyyy-MM-dd"));
 
       if (transError) throw transError;
 
-      const { data: investments, error: invError } = await supabase.from("investments").select("current_value, amount, created_at");
+      const { data: investments, error: invError } = await supabase.from("investments").select("current_value");
 
       if (invError) throw invError;
 
-      // Cálculos
-      const income = transactions?.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+      const completedTransactions = transactions?.filter((t) => !t.is_pending) || [];
+      const pendingTransactions = transactions?.filter((t) => t.is_pending) || [];
 
-      const expenses = transactions?.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+      const income = completedTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
+      const expenses = completedTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0);
+
+      const pendingIncome = pendingTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
+      const pendingExpense = pendingTransactions
+        .filter((t) => t.type === "expense")
+        .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
 
       const totalInvestments = investments?.reduce((sum, inv) => sum + Number(inv.current_value), 0) || 0;
-
-      //O valor do saldo é receita - despesa. Como as despesas são negativas, somamos os valores (saldo = receita + despesa negativa)
       const balance = income + expenses;
 
       setMetrics({
@@ -85,6 +77,8 @@ const Dashboard = () => {
         totalIncome: income,
         totalExpenses: expenses,
         totalInvestments: totalInvestments,
+        pendingIncome,
+        pendingExpense,
       });
     } catch (error) {
       console.error("Erro ao carregar métricas:", error);
@@ -96,7 +90,6 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
@@ -107,47 +100,39 @@ const Dashboard = () => {
           <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
         </div>
 
-        {/* Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {loading ? (
             [...Array(4)].map((_, i) => <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />)
           ) : (
             <>
               <MetricCard
-                title="Saldo do Período"
+                title="Saldo Realizado"
                 value={metrics.totalBalance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<DollarSign className="h-5 w-5 text-primary" />}
                 changeType={metrics.totalBalance >= 0 ? "positive" : "negative"}
               />
               <MetricCard
-                title="Receitas"
+                title="Receitas Recebidas"
                 value={metrics.totalIncome.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingUp className="h-5 w-5 text-success" />}
                 changeType="positive"
               />
               <MetricCard
-                title="Despesas"
+                title="Despesas Pagas"
                 value={metrics.totalExpenses.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 icon={<TrendingDown className="h-5 w-5 text-destructive" />}
                 changeType="negative"
               />
-              <MetricCard
-                title="Patrimônio Investido"
-                value={metrics.totalInvestments.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                icon={<PiggyBank className="h-5 w-5 text-accent" />}
-                changeType="positive"
-              />
+              <PendingSummaryCard pendingIncome={metrics.pendingIncome} pendingExpense={metrics.pendingExpense} isLoading={loading} />
             </>
           )}
         </div>
 
-        {/* Charts and Recent Transactions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <FixedBalanceCard />
           <TransactionsList />
         </div>
 
-        {/* Quick Actions */}
         <Card>
           <CardHeader>
             <CardTitle>Ações Rápidas</CardTitle>
