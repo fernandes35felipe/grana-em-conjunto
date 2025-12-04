@@ -23,10 +23,6 @@ export const TransactionsList = () => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
-    loadTransactions();
-  }, []);
-
   const loadTransactions = async () => {
     try {
       const { data, error } = await supabase
@@ -73,6 +69,31 @@ export const TransactionsList = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadTransactions();
+
+    // Configuração do Realtime para atualizar a lista automaticamente
+    const channel = supabase
+      .channel("recent-transactions-list")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "transactions",
+        },
+        (payload) => {
+          console.log("Atualização em tempo real recebida:", payload);
+          loadTransactions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   if (loading) {
     return (
