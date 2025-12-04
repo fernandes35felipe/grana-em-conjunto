@@ -17,7 +17,6 @@ const navigation = [
   { name: "Grupos", href: "/groups", icon: Users },
   { name: "Lembretes", href: "/reminders", icon: Bell },
   { name: "Meu Perfil", href: "/profile", icon: User },
-  { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
 ];
 
 export const Sidebar = ({ onNavigate }: SidebarProps) => {

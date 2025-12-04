@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, Calendar } from "@/lib/icons";
+import { ArrowUpCircle, ArrowDownCircle, Calendar, Clock } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Transaction {
   id: string;
@@ -13,17 +14,21 @@ interface Transaction {
   type: "income" | "expense";
   category: string;
   date: string;
+  is_pending: boolean; // Adicionado para diferenciar visulamente
   group?: {
     name: string;
   };
 }
 
 export const TransactionsList = () => {
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   const loadTransactions = async () => {
+    if (!user) return;
+
     try {
       const { data, error } = await supabase
         .from("transactions")
@@ -35,12 +40,14 @@ export const TransactionsList = () => {
           type,
           category,
           date,
+          is_pending,
           group_id,
           groups!left (
             name
           )
         `
         )
+        .eq("user_id", user.id) // Garante filtro por usuário explicitamente
         .order("date", { ascending: false })
         .limit(5);
 
@@ -54,38 +61,37 @@ export const TransactionsList = () => {
           type: transaction.type as "income" | "expense",
           category: transaction.category,
           date: transaction.date,
+          is_pending: transaction.is_pending,
           group: transaction.groups ? { name: transaction.groups.name } : undefined,
         })) || [];
 
       setTransactions(formattedTransactions);
     } catch (error) {
       console.error("Erro ao carregar transações:", error);
-      toast({
-        variant: "destructive",
-        title: "Erro",
-        description: "Não foi possível carregar as transações",
-      });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!user) return;
+
+    // Carregamento inicial
     loadTransactions();
 
-    // Configuração do Realtime para atualizar a lista automaticamente
+    // Configuração do Realtime com filtro específico para o usuário
     const channel = supabase
-      .channel("recent-transactions-list")
+      .channel(`recent-transactions-${user.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "transactions",
+          filter: `user_id=eq.${user.id}`, // Escuta apenas alterações deste usuário
         },
-        (payload) => {
-          console.log("Atualização em tempo real recebida:", payload);
-          loadTransactions();
+        () => {
+          loadTransactions(); // Recarrega a lista ao detectar mudança
         }
       )
       .subscribe();
@@ -93,7 +99,7 @@ export const TransactionsList = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]); // Recria a subscrição se o usuário mudar
 
   if (loading) {
     return (
@@ -143,7 +149,10 @@ export const TransactionsList = () => {
             transactions.map((transaction) => (
               <div
                 key={transaction.id}
-                className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                className={cn(
+                  "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                  transaction.is_pending ? "bg-orange-50/50 border-orange-200 hover:bg-orange-50" : "border-border hover:bg-muted/50"
+                )}
               >
                 <div className="flex items-center gap-3">
                   <div
@@ -160,6 +169,12 @@ export const TransactionsList = () => {
                       <Badge variant="secondary" className="text-xs">
                         {transaction.category}
                       </Badge>
+                      {transaction.is_pending && (
+                        <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-100">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Pendente
+                        </Badge>
+                      )}
                       {transaction.group && (
                         <Badge variant="outline" className="text-xs">
                           Grupo: {transaction.group.name}
@@ -169,7 +184,13 @@ export const TransactionsList = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className={cn("font-semibold", transaction.type === "income" ? "text-success" : "text-destructive")}>
+                  <p
+                    className={cn(
+                      "font-semibold",
+                      transaction.type === "income" ? "text-success" : "text-destructive",
+                      transaction.is_pending && "opacity-60"
+                    )}
+                  >
                     {transaction.type === "income" ? "+" : ""}
                     {transaction.amount.toLocaleString("pt-BR", {
                       style: "currency",
