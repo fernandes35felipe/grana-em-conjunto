@@ -23,10 +23,8 @@ import {
   sanitizeUUID,
   validateTransactionData,
   ensureAuthenticated,
-  checkGroupMembership,
   withRateLimit,
   SECURITY_LIMITS,
-  ALLOWED_CATEGORIES,
 } from "@/utils/security";
 import { formatDateForInput, formatDateForDatabase, formatDateTimeForDatabase } from "@/utils/date/dateutils";
 
@@ -94,6 +92,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [customTags, setCustomTags] = useState<string[]>([]); // Tags personalizadas
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -102,9 +101,17 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       if (data.user) {
         setCurrentUserId(data.user.id);
         setValues((prev) => ({ ...prev, payer_id: data.user.id }));
+        fetchCustomTags(data.user.id);
       }
     });
   }, []);
+
+  const fetchCustomTags = async (userId: string) => {
+    const { data } = await supabase.from("user_tags").select("name").order("name");
+    if (data) {
+      setCustomTags(data.map((t) => t.name));
+    }
+  };
 
   const resetForm = () => {
     setValues({
@@ -152,11 +159,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
   const loadGroups = async () => {
     try {
-      const userId = await ensureAuthenticated();
-      const { data, error } = await supabase
-        .from("groups")
-        .select("id, name")
-        .or(`created_by.eq.${userId},id.in.(select group_id from group_members where user_id = ${userId})`);
+      const { data, error } = await supabase.from("groups").select("id, name");
+
       if (error) throw error;
       setGroups(data || []);
     } catch (error) {
@@ -166,7 +170,6 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
   const loadGroupMembers = async (groupId: string) => {
     try {
-      const userId = await ensureAuthenticated();
       const { data, error } = await supabase.from("group_members").select("user_id, profiles(id, full_name)").eq("group_id", groupId);
       if (error) throw error;
 
@@ -232,12 +235,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       await withRateLimit(
         `transaction:${userId}`,
         async () => {
-          // CORREÇÃO AQUI: Gerar recurrenceId também para parcelamentos de cartão (> 1 parcela)
           const shouldGenerateRecurrenceId =
             values.is_recurring || values.is_fixed || (values.is_credit_card && (values.installments > 1 || values.is_fixed));
 
           const recurrenceId = shouldGenerateRecurrenceId ? crypto.randomUUID() : null;
-
           const recurrenceCount = sanitizeInteger(values.recurrence_count);
 
           let loopCount = 1;
@@ -245,7 +246,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
           if (sanitizedData.is_credit_card) {
             if (values.is_fixed) {
-              loopCount = 12; // Assinatura
+              loopCount = 12;
             } else if ((sanitizedData.total_installments || 0) > 1) {
               loopCount = sanitizedData.total_installments || 1;
               isInstallment = true;
@@ -404,11 +405,14 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                 <SelectValue placeholder="Selecione a categoria" />
               </SelectTrigger>
               <SelectContent>
-                {ALLOWED_CATEGORIES.map((cat) => (
+                {customTags.map((cat) => (
                   <SelectItem key={cat} value={cat}>
                     {cat}
                   </SelectItem>
                 ))}
+                {customTags.length === 0 && (
+                  <div className="p-2 text-sm text-muted-foreground text-center">Nenhuma categoria. Adicione em "Categorias".</div>
+                )}
               </SelectContent>
             </Select>
           </div>

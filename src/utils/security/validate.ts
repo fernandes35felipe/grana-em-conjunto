@@ -1,4 +1,4 @@
-import { SECURITY_LIMITS, ALLOWED_TRANSACTION_TYPES, ALLOWED_INVESTMENT_TYPES, ALLOWED_CATEGORIES, REGEX_PATTERNS } from "./constants";
+import { SECURITY_LIMITS, ALLOWED_TRANSACTION_TYPES, ALLOWED_INVESTMENT_TYPES, REGEX_PATTERNS } from "./constants";
 
 import type { ValidationResult, TransactionData, InvestmentData, GroupData } from "./types";
 
@@ -100,8 +100,9 @@ export const validateInvestmentType = (type: string): ValidationResult => {
   return validateEnum(type, ALLOWED_INVESTMENT_TYPES, "Tipo de investimento");
 };
 
+// Agora valida apenas se é uma string válida, sem checar lista fixa
 export const validateCategory = (category: string): ValidationResult => {
-  return validateEnum(category, ALLOWED_CATEGORIES, "Categoria");
+  return validateString(category, "Categoria", 1, 50);
 };
 
 export const validateBoolean = (value: any, fieldName: string): ValidationResult => {

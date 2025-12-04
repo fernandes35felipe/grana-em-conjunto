@@ -319,7 +319,7 @@ const Transactions = () => {
               type="income"
               onSuccess={() => loadData()}
               trigger={
-                <Button variant="outline">
+                <Button variant="default">
                   <Plus className="h-4 w-4 mr-2" /> Receita
                 </Button>
               }
@@ -328,7 +328,7 @@ const Transactions = () => {
               type="expense"
               onSuccess={() => loadData()}
               trigger={
-                <Button>
+                <Button variant="destructive">
                   <Plus className="h-4 w-4 mr-2" /> Despesa
                 </Button>
               }

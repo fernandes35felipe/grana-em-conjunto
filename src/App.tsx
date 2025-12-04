@@ -15,10 +15,11 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Investments = lazy(() => import("./pages/Investments"));
 const Groups = lazy(() => import("./pages/Groups"));
-const JoinGroup = lazy(() => import("./pages/JoinGroup")); // NOVA PÁGINA
+const JoinGroup = lazy(() => import("./pages/JoinGroup"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Reminder = lazy(() => import("./pages/Reminders"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Tags = lazy(() => import("./pages/Tags")); // Nova página
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,8 +43,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
-              
-              {/* ROTA DE PROTEÇÃO */}
+
               <Route
                 path="/dashboard"
                 element={
@@ -76,14 +76,8 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              
-              {/* NOVA ROTA PARA ENTRAR NO GRUPO VIA LINK */}
-              <Route
-                path="/groups/join/:inviteId"
-                element={
-                    <JoinGroup />
-                }
-              />
+
+              <Route path="/groups/join/:inviteId" element={<JoinGroup />} />
 
               <Route
                 path="/reminders"
@@ -98,6 +92,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tags"
+                element={
+                  <ProtectedRoute>
+                    <Tags />
                   </ProtectedRoute>
                 }
               />

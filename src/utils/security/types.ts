@@ -19,13 +19,20 @@ export interface TransactionData {
   recurrence_count?: number | null;
   recurrence_id?: string | null;
   event_id?: string | null;
-  // Novos campos de Cartão de Crédito
   is_credit_card?: boolean;
   card_closing_date?: string | null;
   installment_number?: number | null;
   total_installments?: number | null;
 }
 
+export interface UserTag {
+  id: string;
+  name: string;
+  color?: string;
+  user_id: string;
+}
+
+// ... (Mantenha as outras interfaces existentes InvestmentData, GroupData, etc.)
 export interface InvestmentData {
   name: string;
   type: string;

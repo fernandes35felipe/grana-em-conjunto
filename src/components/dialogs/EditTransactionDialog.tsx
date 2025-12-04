@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeInput, sanitizeAmount, sanitizeDate, ALLOWED_CATEGORIES } from "@/utils/security";
+import { sanitizeInput, sanitizeAmount, sanitizeDate } from "@/utils/security";
 
 interface Transaction {
   id: string;
@@ -28,6 +28,7 @@ interface EditTransactionDialogProps {
 
 export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess }: EditTransactionDialogProps) => {
   const [loading, setLoading] = useState(false);
+  const [customTags, setCustomTags] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     description: "",
     amount: "",
@@ -46,8 +47,19 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
         date: transaction.date,
         is_pending: transaction.is_pending || false,
       });
+
+      supabase.auth.getUser().then(({ data }) => {
+        if (data.user) fetchCustomTags(data.user.id);
+      });
     }
   }, [transaction]);
+
+  const fetchCustomTags = async (userId: string) => {
+    const { data } = await supabase.from("user_tags").select("name").order("name");
+    if (data) {
+      setCustomTags(data.map((t) => t.name));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,11 +151,12 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ALLOWED_CATEGORIES.map((cat) => (
+                {customTags.map((cat) => (
                   <SelectItem key={cat} value={cat}>
                     {cat}
                   </SelectItem>
                 ))}
+                {customTags.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">Sem categorias</div>}
               </SelectContent>
             </Select>
           </div>

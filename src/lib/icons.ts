@@ -59,4 +59,5 @@ export {
   Clock,
   CreditCard,
   Repeat,
+  Tag,
 } from "lucide-react";
