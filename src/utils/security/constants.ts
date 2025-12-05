@@ -10,31 +10,31 @@ export const SECURITY_LIMITS = {
   MIN_RECURRENCE_COUNT: 1,
 } as const;
 
-export const ALLOWED_TRANSACTION_TYPES = ["income", "expense"] as const;
+export const ALLOWED_TRANSACTION_TYPES = ['income', 'expense'] as const;
 
 export const ALLOWED_INVESTMENT_TYPES = [
-  "Ações",
-  "FIIs",
-  "Renda Fixa",
-  "Tesouro Direto",
-  "CDB",
-  "LCI/LCA",
-  "Criptomoedas",
-  "Outro",
+  'Ações',
+  'FIIs',
+  'Renda Fixa',
+  'Tesouro Direto',
+  'CDB',
+  'LCI/LCA',
+  'Criptomoedas',
+  'Outro'
 ] as const;
 
 // Alterado de ALLOWED para SUGGESTED para indicar que não são obrigatórias
 export const SUGGESTED_CATEGORIES = [
-  "Alimentação",
-  "Transporte",
-  "Moradia",
-  "Saúde",
-  "Educação",
-  "Lazer",
-  "Compras",
-  "Serviços",
-  "Investimentos",
-  "Outros",
+  'Alimentação',
+  'Transporte',
+  'Moradia',
+  'Saúde',
+  'Educação',
+  'Lazer',
+  'Compras',
+  'Serviços',
+  'Investimentos',
+  'Outros'
 ] as const;
 
 export const REGEX_PATTERNS = {
@@ -54,7 +54,14 @@ export const SQL_INJECTION_PATTERNS = [
   /;.*DROP/i,
 ] as const;
 
-export const XSS_PATTERNS = [/<script[^>]*>.*?<\/script>/gi, /javascript:/gi, /on\w+\s*=/gi, /<iframe/gi, /<object/gi, /<embed/gi] as const;
+export const XSS_PATTERNS = [
+  /<script[^>]*>.*?<\/script>/gi,
+  /javascript:/gi,
+  /on\w+\s*=/gi,
+  /<iframe/gi,
+  /<object/gi,
+  /<embed/gi,
+] as const;
 
 export const RATE_LIMIT_CONFIG = {
   MAX_REQUESTS_PER_MINUTE: 60,

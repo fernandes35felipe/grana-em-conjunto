@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeInput, sanitizeAmount, sanitizeDate } from "@/utils/security";
+import { sanitizeInput, sanitizeAmount, sanitizeDate, SUGGESTED_CATEGORIES } from "@/utils/security";
 
 interface Transaction {
   id: string;
@@ -47,18 +47,18 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
         date: transaction.date,
         is_pending: transaction.is_pending || false,
       });
-
-      supabase.auth.getUser().then(({ data }) => {
-        if (data.user) fetchCustomTags(data.user.id);
+      
+      supabase.auth.getUser().then(({data}) => {
+          if(data.user) fetchCustomTags(data.user.id);
       });
     }
   }, [transaction]);
 
   const fetchCustomTags = async (userId: string) => {
-    const { data } = await supabase.from("user_tags").select("name").order("name");
-    if (data) {
-      setCustomTags(data.map((t) => t.name));
-    }
+      const { data } = await supabase.from("user_tags").select("name").order("name");
+      if (data) {
+          setCustomTags(data.map(t => t.name));
+      }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,7 +73,7 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
       const finalAmount = transaction.amount < 0 ? -amount : amount;
 
       const pendingType = formData.is_pending ? (transaction.type === "income" ? "receivable" : "payable") : null;
-
+      
       const updateData: any = {
         description: sanitizeInput(formData.description),
         amount: finalAmount,
@@ -89,7 +89,10 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
         updateData.paid_at = new Date().toISOString();
       }
 
-      const { error } = await supabase.from("transactions").update(updateData).eq("id", transaction.id);
+      const { error } = await supabase
+        .from("transactions")
+        .update(updateData)
+        .eq("id", transaction.id);
 
       if (error) throw error;
 
@@ -103,6 +106,9 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
       setLoading(false);
     }
   };
+  
+  // Corrigido para usar SUGGESTED_CATEGORIES
+  const allCategories = [...SUGGESTED_CATEGORIES, ...customTags].sort();
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -146,34 +152,38 @@ export const EditTransactionDialog = ({ transaction, isOpen, onClose, onSuccess 
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-cat">Categoria</Label>
-            <Select value={formData.category} onValueChange={(val) => setFormData({ ...formData, category: val })}>
+            <Select
+              value={formData.category}
+              onValueChange={(val) => setFormData({ ...formData, category: val })}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {customTags.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
+                {allCategories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                 ))}
-                {customTags.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">Sem categorias</div>}
+                {customTags.length === 0 && (
+                   <div className="p-2 text-sm text-muted-foreground text-center">
+                       Sem categorias
+                   </div>
+                )}
               </SelectContent>
             </Select>
           </div>
           <div className="flex items-center justify-between border p-3 rounded-md">
             <div className="space-y-0.5">
               <Label className="text-base">Pendente</Label>
-              <p className="text-xs text-muted-foreground">Marcar como {transaction?.type === "income" ? "a receber" : "a pagar"}</p>
+              <p className="text-xs text-muted-foreground">Marcar como {transaction?.type === 'income' ? 'a receber' : 'a pagar'}</p>
             </div>
-            <Switch checked={formData.is_pending} onCheckedChange={(checked) => setFormData({ ...formData, is_pending: checked })} />
+            <Switch
+              checked={formData.is_pending}
+              onCheckedChange={(checked) => setFormData({ ...formData, is_pending: checked })}
+            />
           </div>
           <div className="flex gap-2 pt-4">
-            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Salvando..." : "Salvar"}
-            </Button>
+            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" className="flex-1" disabled={loading}>{loading ? "Salvando..." : "Salvar"}</Button>
           </div>
         </form>
       </DialogContent>

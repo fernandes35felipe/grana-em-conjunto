@@ -42,7 +42,6 @@ interface Transaction {
   is_fixed: boolean;
   is_recurring: boolean;
   recurrence_id: string | null;
-  created_by_name?: string;
   is_pending: boolean;
   pending_type?: "payable" | "receivable" | null;
   paid_at?: string | null;
@@ -110,9 +109,11 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
+      // CORREÇÃO: Removido o join com 'profiles' que causava erro se a FK não existisse ou tivesse outro nome.
+      // O nome do usuário não estava sendo usado na listagem, então é seguro remover para garantir robustez.
       let query = supabase
         .from("transactions")
-        .select(`*, groups!left (name), profiles!transactions_user_id_fkey (full_name)`)
+        .select(`*, groups!left (name)`)
         .order("date", { ascending: false });
 
       if (dateRange.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
@@ -133,7 +134,6 @@ const Transactions = () => {
           group_id: t.group_id,
           event_id: t.event_id,
           group_name: t.groups?.name,
-          created_by_name: t.profiles?.full_name,
           is_fixed: t.is_fixed || false,
           is_recurring: t.is_recurring || false,
           recurrence_id: t.recurrence_id,
@@ -146,6 +146,7 @@ const Transactions = () => {
       setTransactions(formattedData);
     } catch (error) {
       console.error("Erro ao carregar transações:", error);
+      toast({ title: "Erro", description: "Falha ao carregar lista de transações", variant: "destructive" });
     }
   };
 
@@ -181,7 +182,10 @@ const Transactions = () => {
         updates.pending_type = null;
       }
 
-      const { error } = await supabase.from("transactions").update(updates).eq("id", transaction.id);
+      const { error } = await supabase
+        .from("transactions")
+        .update(updates)
+        .eq("id", transaction.id);
 
       if (error) throw error;
 
@@ -203,9 +207,8 @@ const Transactions = () => {
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
     try {
-      // CORREÇÃO: Verificar se possui recurrence_id e se é do tipo que deve apagar em massa (fixo, recorrente ou cartão)
       if (
-        transactionToDelete.recurrence_id &&
+        transactionToDelete.recurrence_id && 
         (transactionToDelete.is_fixed || transactionToDelete.is_recurring || transactionToDelete.is_credit_card)
       ) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -272,7 +275,7 @@ const Transactions = () => {
             filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
           const matchesPending = !onlyPending || item.data.is_pending;
           const matchesCreditCard = !onlyCreditCard || item.data.is_credit_card;
-
+          
           return matchesSearch && matchesType && matchesCategory && matchesGroup && matchesPending && matchesCreditCard;
         } else {
           return item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -285,14 +288,14 @@ const Transactions = () => {
       });
   }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup, onlyPending, onlyCreditCard]);
 
-  const completedTransactions = transactions.filter((t) => !t.is_pending);
-
+  const completedTransactions = transactions.filter(t => !t.is_pending);
+  
   const totalIncome = completedTransactions.reduce((acc, t) => (t.type === "income" ? acc + t.amount : acc), 0);
   const totalExpense = completedTransactions.reduce((acc, t) => (t.type === "expense" ? acc + Math.abs(t.amount) : acc), 0);
   const balance = totalIncome - totalExpense;
 
-  const pendingIncome = transactions.filter((t) => t.is_pending && t.type === "income").reduce((acc, t) => acc + t.amount, 0);
-  const pendingExpense = transactions.filter((t) => t.is_pending && t.type === "expense").reduce((acc, t) => acc + Math.abs(t.amount), 0);
+  const pendingIncome = transactions.filter(t => t.is_pending && t.type === "income").reduce((acc, t) => acc + t.amount, 0);
+  const pendingExpense = transactions.filter(t => t.is_pending && t.type === "expense").reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
   const categories = Array.from(new Set(transactions.map((t) => t.category))).filter((cat) => cat && cat.trim() !== "");
 
@@ -319,7 +322,7 @@ const Transactions = () => {
               type="income"
               onSuccess={() => loadData()}
               trigger={
-                <Button variant="default">
+                <Button variant="outline">
                   <Plus className="h-4 w-4 mr-2" /> Receita
                 </Button>
               }
@@ -328,7 +331,7 @@ const Transactions = () => {
               type="expense"
               onSuccess={() => loadData()}
               trigger={
-                <Button variant="destructive">
+                <Button>
                   <Plus className="h-4 w-4 mr-2" /> Despesa
                 </Button>
               }
@@ -488,9 +491,7 @@ const Transactions = () => {
                         key={transaction.id}
                         className={cn(
                           "flex items-center justify-between p-4 rounded-lg border transition-colors",
-                          transaction.is_pending
-                            ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800"
-                            : "hover:bg-accent/50"
+                          transaction.is_pending ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800" : "hover:bg-accent/50"
                         )}
                       >
                         <div className="flex items-center gap-4">
@@ -516,56 +517,32 @@ const Transactions = () => {
                               )}
                               {transaction.is_credit_card && (
                                 <Badge variant="secondary" className="text-xs">
-                                  <CreditCard className="h-3 w-3 mr-1" />
-                                  Cartão
+                                    <CreditCard className="h-3 w-3 mr-1" />
+                                    Cartão
                                 </Badge>
                               )}
-                              {transaction.is_fixed && (
-                                <Badge variant="outline" className="text-xs">
-                                  Fixo
-                                </Badge>
-                              )}
-                              {transaction.is_recurring && !transaction.is_fixed && (
-                                <Badge variant="outline" className="text-xs">
-                                  Recorrente
-                                </Badge>
-                              )}
+                              {transaction.is_fixed && <Badge variant="outline" className="text-xs">Fixo</Badge>}
+                              {transaction.is_recurring && !transaction.is_fixed && <Badge variant="outline" className="text-xs">Recorrente</Badge>}
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="secondary" className="text-xs">
-                                {transaction.category}
-                              </Badge>
-                              {transaction.group_name && (
-                                <Badge variant="outline" className="text-xs">
-                                  {transaction.group_name}
-                                </Badge>
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(transaction.date).toLocaleDateString("pt-BR")}
-                              </span>
+                              <Badge variant="secondary" className="text-xs">{transaction.category}</Badge>
+                              {transaction.group_name && <Badge variant="outline" className="text-xs">{transaction.group_name}</Badge>}
+                              <span className="text-xs text-muted-foreground">{new Date(transaction.date).toLocaleDateString("pt-BR")}</span>
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <p
-                            className={cn(
-                              "font-semibold text-lg",
-                              transaction.type === "income" ? "text-success" : "text-destructive",
-                              transaction.is_pending && "opacity-60"
-                            )}
-                          >
+                          <p className={cn("font-semibold text-lg", transaction.type === "income" ? "text-success" : "text-destructive", transaction.is_pending && "opacity-60")}>
                             {transaction.type === "income" ? "+" : "-"}
                             {Math.abs(transaction.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </p>
-
+                          
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => handleToggleStatus(transaction)}
                             title={transaction.is_pending ? "Marcar como pago/recebido" : "Marcar como pendente"}
-                            className={
-                              transaction.is_pending ? "text-orange-500 hover:text-orange-600" : "text-success hover:text-success/80"
-                            }
+                            className={transaction.is_pending ? "text-orange-500 hover:text-orange-600" : "text-success hover:text-success/80"}
                           >
                             {transaction.is_pending ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                           </Button>
@@ -604,15 +581,13 @@ const Transactions = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover esta transação?
-                {transactionToDelete?.recurrence_id && " Isto removerá todas as parcelas/ocorrências associadas."}
+                Tem certeza que deseja remover esta transação? 
+                {(transactionToDelete?.recurrence_id) && " Isto removerá todas as parcelas/ocorrências associadas."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">
-                Remover
-              </AlertDialogAction>
+              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">Remover</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -632,7 +607,7 @@ const Transactions = () => {
           />
         )}
 
-        <EditTransactionDialog
+        <EditTransactionDialog 
           transaction={transactionToEdit}
           isOpen={editDialogOpen}
           onClose={() => {
