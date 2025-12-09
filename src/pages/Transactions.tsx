@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers, CheckCircle2, XCircle, Edit, CreditCard } from "@/lib/icons";
+import { ArrowUpCircle, ArrowDownCircle, Search, Filter, Plus, Trash2, Layers, CheckCircle2, XCircle, Edit, CreditCard, Bell } from "@/lib/icons";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
+import { AddReminderDialog } from "@/components/dialogs/AddReminderDialog";
 import { AddEventDialog } from "@/components/dialogs/AddEventDialog";
 import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { EditTransactionDialog } from "@/components/dialogs/EditTransactionDialog";
@@ -208,7 +209,7 @@ const Transactions = () => {
     if (!transactionToDelete) return;
     try {
       if (
-        transactionToDelete.recurrence_id && 
+        transactionToDelete.recurrence_id &&
         (transactionToDelete.is_fixed || transactionToDelete.is_recurring || transactionToDelete.is_credit_card)
       ) {
         await supabase.from("transactions").delete().eq("recurrence_id", transactionToDelete.recurrence_id);
@@ -275,7 +276,7 @@ const Transactions = () => {
             filterGroup === "all" || (filterGroup === "none" && !item.data.group_id) || item.data.group_id === filterGroup;
           const matchesPending = !onlyPending || item.data.is_pending;
           const matchesCreditCard = !onlyCreditCard || item.data.is_credit_card;
-          
+
           return matchesSearch && matchesType && matchesCategory && matchesGroup && matchesPending && matchesCreditCard;
         } else {
           return item.data.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -289,7 +290,7 @@ const Transactions = () => {
   }, [transactions, events, searchTerm, filterType, filterCategory, filterGroup, onlyPending, onlyCreditCard]);
 
   const completedTransactions = transactions.filter(t => !t.is_pending);
-  
+
   const totalIncome = completedTransactions.reduce((acc, t) => (t.type === "income" ? acc + t.amount : acc), 0);
   const totalExpense = completedTransactions.reduce((acc, t) => (t.type === "expense" ? acc + Math.abs(t.amount) : acc), 0);
   const balance = totalIncome - totalExpense;
@@ -517,8 +518,8 @@ const Transactions = () => {
                               )}
                               {transaction.is_credit_card && (
                                 <Badge variant="secondary" className="text-xs">
-                                    <CreditCard className="h-3 w-3 mr-1" />
-                                    Cartão
+                                  <CreditCard className="h-3 w-3 mr-1" />
+                                  Cartão
                                 </Badge>
                               )}
                               {transaction.is_fixed && <Badge variant="outline" className="text-xs">Fixo</Badge>}
@@ -536,7 +537,7 @@ const Transactions = () => {
                             {transaction.type === "income" ? "+" : "-"}
                             {Math.abs(transaction.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </p>
-                          
+
                           <Button
                             variant="ghost"
                             size="icon"
@@ -546,6 +547,18 @@ const Transactions = () => {
                           >
                             {transaction.is_pending ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                           </Button>
+
+                          {transaction.is_pending && (
+                            <AddReminderDialog
+                              transactionId={transaction.id}
+                              defaultTitle={transaction.description}
+                              trigger={
+                                <Button variant="ghost" size="icon" title="Criar lembrete">
+                                  <Bell className="h-4 w-4 text-orange-500" />
+                                </Button>
+                              }
+                            />
+                          )}
 
                           <Button
                             variant="ghost"
@@ -581,7 +594,7 @@ const Transactions = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja remover esta transação? 
+                Tem certeza que deseja remover esta transação?
                 {(transactionToDelete?.recurrence_id) && " Isto removerá todas as parcelas/ocorrências associadas."}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -607,7 +620,7 @@ const Transactions = () => {
           />
         )}
 
-        <EditTransactionDialog 
+        <EditTransactionDialog
           transaction={transactionToEdit}
           isOpen={editDialogOpen}
           onClose={() => {

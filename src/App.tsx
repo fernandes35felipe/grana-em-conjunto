@@ -19,7 +19,8 @@ const JoinGroup = lazy(() => import("./pages/JoinGroup"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Reminder = lazy(() => import("./pages/Reminders"));
 const Profile = lazy(() => import("./pages/Profile"));
-const Tags = lazy(() => import("./pages/Tags")); // Nova página
+const Tags = lazy(() => import("./pages/Tags"));
+const Reports = lazy(() => import("./pages/Reports"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +101,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Tags />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute>
+                    <Reports />
                   </ProtectedRoute>
                 }
               />

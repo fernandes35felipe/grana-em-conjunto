@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { TransactionsList } from "@/components/dashboard/TransactionsList";
 import { AddTransactionDialog } from "@/components/dialogs/AddTransactionDialog";
 import { AddInvestmentDialog } from "@/components/dialogs/AddInvestmentDialog";
 import { DateFilter, DateRange } from "@/components/filters/DateFilter";
-import { DollarSign, TrendingUp, TrendingDown, PiggyBank } from "@/lib/icons";
+import { DollarSign, TrendingUp, TrendingDown, PiggyBank, ArrowUpCircle, ArrowDownCircle, FileText } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { startOfMonth, endOfMonth, format } from "@/lib/date";
@@ -15,6 +16,7 @@ import { PendingSummaryCard } from "@/components/dashboard/PendingSummaryCard";
 import { CreditCardSummary } from "@/components/dashboard/CreditCardSummary";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [dateRange, setDateRange] = useState<DateRange>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -51,11 +53,15 @@ const Dashboard = () => {
         .from("transactions")
         .select("amount, type, date, is_pending")
         .gte("date", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("date", format(dateRange.to, "yyyy-MM-dd"));
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"))
+        .returns<any[]>();
 
       if (transError) throw transError;
 
-      const { data: investments, error: invError } = await supabase.from("investments").select("current_value");
+      const { data: investments, error: invError } = await supabase
+        .from("investments")
+        .select("current_value")
+        .returns<any[]>();
 
       if (invError) throw invError;
 
@@ -142,12 +148,42 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <AddTransactionDialog type="income" onSuccess={loadMetrics} />
-              <AddTransactionDialog type="expense" onSuccess={loadMetrics} />
-              <AddInvestmentDialog onSuccess={loadMetrics} />
-              <Button variant="outline" className="h-20 flex flex-col gap-2">
-                <DollarSign className="h-6 w-6" />
-                <span className="text-sm">Ver Relatórios</span>
+              <AddTransactionDialog
+                type="income"
+                onSuccess={loadMetrics}
+                trigger={
+                  <Button variant="outline" className="h-24 flex flex-col gap-2 bg-success/10 hover:bg-success/20 border-success/20">
+                    <ArrowUpCircle className="h-8 w-8 text-success" />
+                    <span className="text-sm font-medium text-success">Nova Receita</span>
+                  </Button>
+                }
+              />
+              <AddTransactionDialog
+                type="expense"
+                onSuccess={loadMetrics}
+                trigger={
+                  <Button variant="outline" className="h-24 flex flex-col gap-2 bg-destructive/10 hover:bg-destructive/20 border-destructive/20">
+                    <ArrowDownCircle className="h-8 w-8 text-destructive" />
+                    <span className="text-sm font-medium text-destructive">Nova Despesa</span>
+                  </Button>
+                }
+              />
+              <AddInvestmentDialog
+                onSuccess={loadMetrics}
+                trigger={
+                  <Button variant="outline" className="h-24 flex flex-col gap-2 bg-primary/10 hover:bg-primary/20 border-primary/20">
+                    <PiggyBank className="h-8 w-8 text-primary" />
+                    <span className="text-sm font-medium text-primary">Novo Investimento</span>
+                  </Button>
+                }
+              />
+              <Button
+                variant="outline"
+                className="h-24 flex flex-col gap-2 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/20"
+                onClick={() => navigate("/reports")}
+              >
+                <FileText className="h-8 w-8 text-orange-500" />
+                <span className="text-sm font-medium text-orange-500">Relatórios</span>
               </Button>
             </div>
           </CardContent>

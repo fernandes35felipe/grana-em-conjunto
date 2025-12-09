@@ -20,6 +20,8 @@ import {
   Clock,
   Edit,
 } from "@/lib/icons";
+import { Download } from "lucide-react";
+import { generatePDF } from "@/utils/reports/pdfGenerator";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,8 @@ import { startOfMonth, endOfMonth, format } from "@/lib/date";
 import { EventDetailsModal } from "@/components/transactions/EventDetailsModal";
 import { Separator } from "@/components/ui/separator";
 import { Toggle } from "@/components/ui/toggle";
+import { Bell } from "@/lib/icons";
+import { AddReminderDialog } from "@/components/dialogs/AddReminderDialog";
 
 interface GroupDetailsModalProps {
   isOpen: boolean;
@@ -284,6 +288,36 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
     }
   };
 
+  const handleExportPDF = async () => {
+    try {
+      await generatePDF({
+        transactions: transactions,
+        investments: investments.map(i => ({
+          id: i.id,
+          name: i.name,
+          type: i.type,
+          current_amount: i.current_value
+        })),
+        dateRange: {
+          from: dateRange.from,
+          to: dateRange.to
+        } as any,
+        title: `Relatório do Grupo: ${groupName}`
+      });
+      toast({
+        title: "Sucesso!",
+        description: "Relatório gerado com sucesso.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Erro",
+        description: "Falha ao gerar o PDF.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -291,7 +325,10 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
           <div className="flex flex-row items-center justify-between">
             <DialogTitle>Detalhes do Grupo: {groupName}</DialogTitle>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="icon" onClick={handleExportPDF} title="Exportar Relatório">
+              <Download className="h-4 w-4" />
+            </Button>
             <DateFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
           </div>
         </DialogHeader>
@@ -541,6 +578,19 @@ export const GroupDetailsModal = ({ isOpen, onClose, groupId, groupName }: Group
                             >
                               {transaction.is_pending ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                             </Button>
+
+                            {transaction.is_pending && (
+                              <AddReminderDialog
+                                transactionId={transaction.id}
+                                defaultTitle={transaction.description}
+                                trigger={
+                                  <Button variant="ghost" size="icon" title="Criar lembrete">
+                                    <Bell className="h-4 w-4 text-orange-500" />
+                                  </Button>
+                                }
+                              />
+                            )}
+
                             <Button
                               variant="ghost"
                               size="icon"

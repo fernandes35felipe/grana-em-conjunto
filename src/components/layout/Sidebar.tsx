@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell, User, Tag } from "lucide-react";
+import { LayoutDashboard, ArrowUpDown, TrendingUp, Users, PlusCircle, DollarSign, LogOut, Bell, User, Tag, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -15,7 +15,8 @@ const navigation = [
   { name: "Transações", href: "/transactions", icon: ArrowUpDown },
   { name: "Investimentos", href: "/investments", icon: TrendingUp },
   { name: "Grupos", href: "/groups", icon: Users },
-  { name: "Categorias", href: "/tags", icon: Tag }, // Novo Link
+  { name: "Categorias", href: "/tags", icon: Tag },
+  { name: "Relatórios", href: "/reports", icon: FileText },
   { name: "Lembretes", href: "/reminders", icon: Bell },
   { name: "Meu Perfil", href: "/profile", icon: User },
   { name: "Novo Lançamento", href: "/new-transaction", icon: PlusCircle },
@@ -55,8 +56,7 @@ export const Sidebar = ({ onNavigate }: SidebarProps) => {
             to={item.href}
             onClick={handleNavClick}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`
             }
           >
