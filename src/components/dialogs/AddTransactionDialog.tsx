@@ -14,6 +14,9 @@ import { CreditCard, Repeat } from "@/lib/icons";
 import { useToast } from "@/hooks/use-toast";
 import { useReminders } from "@/hooks/useReminders";
 import { supabase } from "@/integrations/supabase/client";
+import { CreditCard as ICreditCard } from "@/types/credit-card";
+import { getNextClosingDate } from "@/utils/credit-card-utils";
+import { format } from "date-fns";
 
 import {
   sanitizeInput,
@@ -52,6 +55,7 @@ interface TransactionFormData {
   is_pending: boolean;
   recurrence_count: number;
   is_credit_card: boolean;
+  credit_card_id: string | null;
   installments: number;
   card_closing_date: string;
 }
@@ -80,6 +84,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
     is_pending: false,
     recurrence_count: 1,
     is_credit_card: false,
+    credit_card_id: null,
     installments: 1,
     card_closing_date: formatDateForInput(addMonths(new Date(), 1)),
   });
@@ -91,6 +96,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
   });
 
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [creditCards, setCreditCards] = useState<ICreditCard[]>([]);
   const [groupMembers, setGroupMembers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [customTags, setCustomTags] = useState<string[]>([]);
@@ -108,10 +114,10 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
   }, []);
 
   const fetchCustomTags = async (userId: string) => {
-      const { data } = await supabase.from("user_tags").select("name").order("name");
-      if (data) {
-          setCustomTags(data.map(t => t.name));
-      }
+    const { data } = await supabase.from("user_tags").select("name").order("name");
+    if (data) {
+      setCustomTags(data.map(t => t.name));
+    }
   };
 
   const resetForm = () => {
@@ -127,6 +133,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       is_pending: false,
       recurrence_count: 1,
       is_credit_card: false,
+      credit_card_id: null,
       installments: 1,
       card_closing_date: formatDateForInput(addMonths(new Date(), 1)),
     });
@@ -143,11 +150,12 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
     if (open) {
       if (!defaultGroupId && !eventId) {
         loadGroups();
+        if (type === "expense") loadCreditCards();
       } else if (defaultGroupId && open) {
         loadGroupMembers(defaultGroupId);
       }
     }
-  }, [open, eventId, defaultGroupId]);
+  }, [open, eventId, defaultGroupId, type]);
 
   useEffect(() => {
     if (values.group_id && values.group_id !== "personal") {
@@ -168,6 +176,16 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       setGroups(data || []);
     } catch (error) {
       console.error("Erro ao carregar grupos:", error);
+    }
+  };
+
+  const loadCreditCards = async () => {
+    try {
+      const { data, error } = await supabase.from("credit_cards").select("*").order("name");
+      if (error) throw error;
+      setCreditCards(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar cartões:", error);
     }
   };
 
@@ -213,7 +231,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
       const isPending = values.is_credit_card ? true : values.is_pending;
       const pendingType = isPending ? (type === "income" ? "receivable" : "payable") : null;
-      const paidAt = isPending ? null : formatDateTimeForDatabase(values.date + "T12:00:00"); 
+      const paidAt = isPending ? null : formatDateTimeForDatabase(values.date + "T12:00:00");
 
       const sanitizedData: TransactionData = {
         description: sanitizeInput(values.description),
@@ -228,6 +246,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
         paid_at: paidAt,
         event_id: eventId ? sanitizeUUID(eventId) : null,
         is_credit_card: Boolean(values.is_credit_card),
+        credit_card_id: values.is_credit_card ? sanitizeUUID(values.credit_card_id || "") : null,
         total_installments: values.is_credit_card && !values.is_fixed ? Math.max(1, sanitizeInteger(values.installments)) : null,
         card_closing_date: values.is_credit_card ? sanitizeDate(values.card_closing_date) : null,
       };
@@ -238,50 +257,50 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
       await withRateLimit(
         `transaction:${userId}`,
         async () => {
-          const shouldGenerateRecurrenceId = 
-            values.is_recurring || 
-            values.is_fixed || 
+          const shouldGenerateRecurrenceId =
+            values.is_recurring ||
+            values.is_fixed ||
             (values.is_credit_card && (values.installments > 1 || values.is_fixed));
 
           const recurrenceId = shouldGenerateRecurrenceId ? crypto.randomUUID() : null;
           const recurrenceCount = sanitizeInteger(values.recurrence_count);
-          
+
           let loopCount = 1;
           let isInstallment = false;
 
           if (sanitizedData.is_credit_card) {
-             if (values.is_fixed) {
-                 loopCount = 12;
-             } else if ((sanitizedData.total_installments || 0) > 1) {
-                 loopCount = sanitizedData.total_installments || 1;
-                 isInstallment = true;
-             }
+            if (values.is_fixed) {
+              loopCount = 12;
+            } else if ((sanitizedData.total_installments || 0) > 1) {
+              loopCount = sanitizedData.total_installments || 1;
+              isInstallment = true;
+            }
           } else if (values.is_fixed) {
-             loopCount = 12;
+            loopCount = 12;
           } else if (values.is_recurring) {
-             loopCount = recurrenceCount;
+            loopCount = recurrenceCount;
           }
 
-          const baseDate = new Date(values.date + "T00:00:00"); 
+          const baseDate = new Date(values.date + "T00:00:00");
           const baseClosingDate = values.is_credit_card ? new Date(values.card_closing_date + "T00:00:00") : null;
 
           const installmentAmount = (sanitizedData.is_credit_card && isInstallment)
-            ? amount / loopCount 
-            : amount; 
+            ? amount / loopCount
+            : amount;
 
           for (let i = 0; i < loopCount; i++) {
             let transactionDate: Date;
             let description = sanitizedData.description;
 
             if (sanitizedData.is_credit_card && baseClosingDate) {
-                transactionDate = addMonths(baseClosingDate, i);
-                if (isInstallment) {
-                    description = `${sanitizedData.description} (${i + 1}/${loopCount})`;
-                }
+              transactionDate = addMonths(baseClosingDate, i);
+              if (isInstallment) {
+                description = `${sanitizedData.description} (${i + 1}/${loopCount})`;
+              }
             } else {
-                transactionDate = addMonths(baseDate, i);
+              transactionDate = addMonths(baseDate, i);
             }
-            
+
             const formattedDate = formatDateForDatabase(transactionDate);
             const currentPaidAt = sanitizedData.is_pending ? null : new Date(transactionDate.setHours(12)).toISOString();
 
@@ -305,7 +324,8 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
                 recurrence_count: recurrenceCount,
                 event_id: sanitizedData.event_id,
                 is_credit_card: sanitizedData.is_credit_card,
-                card_closing_date: formattedDate, 
+                credit_card_id: sanitizedData.credit_card_id,
+                card_closing_date: formattedDate,
                 installment_number: (sanitizedData.is_credit_card && isInstallment) ? i + 1 : null,
                 total_installments: isInstallment ? sanitizedData.total_installments : null
               })
@@ -448,48 +468,48 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
 
           {values.group_id !== "personal" && values.group_id !== "none" && (
             <>
-                {groupMembers.length > 0 && (
-                    <div className="space-y-2">
-                    <Label htmlFor="payer_id">Quem pagou?</Label>
-                    <Select value={values.payer_id} onValueChange={(value) => handleInputChange({ target: { name: "payer_id", value } } as any)}>
-                        <SelectTrigger>
-                        <SelectValue placeholder="Selecione quem pagou" />
-                        </SelectTrigger>
-                        <SelectContent>
-                        {groupMembers.map((member) => (
-                            <SelectItem key={member.id} value={member.id}>
-                            {member.id === currentUserId ? "Eu" : member.full_name}
-                            </SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    </div>
-                )}
+              {groupMembers.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="payer_id">Quem pagou?</Label>
+                  <Select value={values.payer_id} onValueChange={(value) => handleInputChange({ target: { name: "payer_id", value } } as any)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione quem pagou" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {groupMembers.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.id === currentUserId ? "Eu" : member.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-                {groupMembers.length > 0 && (
+              {groupMembers.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Quem está envolvido? (Dividir com)</Label>
+                  <ScrollArea className="h-24 rounded-md border p-2">
                     <div className="space-y-2">
-                    <Label>Quem está envolvido? (Dividir com)</Label>
-                    <ScrollArea className="h-24 rounded-md border p-2">
-                        <div className="space-y-2">
-                        {groupMembers.map((member) => (
-                            <div key={member.id} className="flex items-center space-x-2">
-                            <Checkbox
-                                id={`member-${member.id}`}
-                                checked={selectedMembers.includes(member.id)}
-                                onCheckedChange={() => toggleMember(member.id)}
-                            />
-                            <label
-                                htmlFor={`member-${member.id}`}
-                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                            >
-                                {member.full_name}
-                            </label>
-                            </div>
-                        ))}
+                      {groupMembers.map((member) => (
+                        <div key={member.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`member-${member.id}`}
+                            checked={selectedMembers.includes(member.id)}
+                            onCheckedChange={() => toggleMember(member.id)}
+                          />
+                          <label
+                            htmlFor={`member-${member.id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {member.full_name}
+                          </label>
                         </div>
-                    </ScrollArea>
+                      ))}
                     </div>
-                )}
+                  </ScrollArea>
+                </div>
+              )}
             </>
           )}
 
@@ -498,129 +518,155 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
           {/* Opção de Cartão de Crédito sempre visível para despesas, mesmo em eventos */}
           {type === "expense" && (
             <div className="rounded-md border p-4 space-y-4 bg-card">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                    <Label htmlFor="is_credit_card" className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4" /> 
-                        Cartão de Crédito
-                    </Label>
-                    <p className="text-xs text-muted-foreground">Lançar na fatura</p>
-                    </div>
-                    <Switch
-                    id="is_credit_card"
-                    checked={values.is_credit_card}
-                    onCheckedChange={(checked) => {
-                        handleInputChange({ target: { name: "is_credit_card", value: checked } } as any);
-                        if(checked) {
-                            handleInputChange({ target: { name: "is_recurring", value: false } } as any);
-                            handleInputChange({ target: { name: "is_fixed", value: false } } as any);
-                            handleInputChange({ target: { name: "is_pending", value: true } } as any); 
-                        }
-                    }}
-                    />
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_credit_card" className="flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
+                    Cartão de Crédito
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Lançar na fatura</p>
                 </div>
+                <Switch
+                  id="is_credit_card"
+                  checked={values.is_credit_card}
+                  onCheckedChange={(checked) => {
+                    handleInputChange({ target: { name: "is_credit_card", value: checked } } as any);
+                    if (checked) {
+                      handleInputChange({ target: { name: "is_recurring", value: false } } as any);
+                      handleInputChange({ target: { name: "is_fixed", value: false } } as any);
+                      handleInputChange({ target: { name: "is_pending", value: true } } as any);
+                    } else {
+                      handleInputChange({ target: { name: "credit_card_id", value: null } } as any);
+                    }
+                  }}
+                />
+              </div>
 
-                {values.is_credit_card && (
-                    <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="card_closing_date">Vencimento 1ª Fatura</Label>
-                            <Input 
-                                id="card_closing_date" 
-                                type="date" 
-                                value={values.card_closing_date}
-                                onChange={(e) => handleInputChange({ target: { name: "card_closing_date", value: e.target.value } } as any)}
-                            />
-                        </div>
+              {values.is_credit_card && (
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="credit_card_id">Selecione o Cartão</Label>
+                    <Select
+                      value={values.credit_card_id || ""}
+                      onValueChange={(val) => {
+                        handleInputChange({ target: { name: "credit_card_id", value: val } } as any);
+                        // Auto-calculate closing date
+                        const card = creditCards.find(c => c.id === val);
+                        if (card) {
+                          const nextClosing = getNextClosingDate(card, new Date(values.date));
+                          handleInputChange({ target: { name: "card_closing_date", value: format(nextClosing, 'yyyy-MM-dd') } } as any);
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {creditCards.map(card => (
+                          <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="card_closing_date">Vencimento 1ª Fatura</Label>
+                    <Input
+                      id="card_closing_date"
+                      type="date"
+                      value={values.card_closing_date}
+                      onChange={(e) => handleInputChange({ target: { name: "card_closing_date", value: e.target.value } } as any)}
+                    />
+                  </div>
 
-                        {!values.is_fixed ? (
-                            <div className="space-y-2">
-                                <Label htmlFor="installments">Parcelas</Label>
-                                <Input 
-                                    id="installments" 
-                                    type="number" 
-                                    min="1" 
-                                    max="60"
-                                    value={values.installments}
-                                    onChange={(e) => handleInputChange({ target: { name: "installments", value: e.target.value } } as any)}
-                                />
-                            </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-full">
-                                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">Assinatura Recorrente</span>
-                            </div>
-                        )}
-                        
-                        {/* Se for evento, não mostra opção de assinatura fixa, pois eventos não são assinaturas */}
-                        {!eventId && (
-                            <div className="col-span-2 flex items-center justify-between bg-muted/50 p-2 rounded">
-                                <div className="space-y-0.5">
-                                    <Label htmlFor="is_fixed_card" className="flex items-center gap-2 text-xs">
-                                        <Repeat className="h-3 w-3" /> 
-                                        Assinatura / Fixa
-                                    </Label>
-                                </div>
-                                <Switch
-                                    id="is_fixed_card"
-                                    checked={values.is_fixed}
-                                    onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
-                                />
-                            </div>
-                        )}
-
-                         {!values.is_fixed && values.installments > 1 && (
-                            <p className="text-xs text-muted-foreground col-span-2">
-                                {values.installments}x de {(values.amount / values.installments).toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}
-                            </p>
-                         )}
+                  {!values.is_fixed ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="installments">Parcelas</Label>
+                      <Input
+                        id="installments"
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={values.installments}
+                        onChange={(e) => handleInputChange({ target: { name: "installments", value: e.target.value } } as any)}
+                      />
                     </div>
-                )}
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">Assinatura Recorrente</span>
+                    </div>
+                  )}
+
+                  {/* Se for evento, não mostra opção de assinatura fixa, pois eventos não são assinaturas */}
+                  {!eventId && (
+                    <div className="col-span-2 flex items-center justify-between bg-muted/50 p-2 rounded">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="is_fixed_card" className="flex items-center gap-2 text-xs">
+                          <Repeat className="h-3 w-3" />
+                          Assinatura / Fixa
+                        </Label>
+                      </div>
+                      <Switch
+                        id="is_fixed_card"
+                        checked={values.is_fixed}
+                        onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
+                      />
+                    </div>
+                  )}
+
+                  {!values.is_fixed && values.installments > 1 && (
+                    <p className="text-xs text-muted-foreground col-span-2">
+                      {values.installments}x de {(values.amount / values.installments).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {/* Opções de Recorrência Padrão - Mantém escondido para eventos para não confundir */}
           {!eventId && !values.is_credit_card && (
-              <>
-                <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                    <Label htmlFor="is_recurring">Transação Recorrente</Label>
-                    <p className="text-sm text-muted-foreground">Repetir X vezes</p>
-                    </div>
-                    <Switch
-                    id="is_recurring"
-                    name="is_recurring"
-                    checked={values.is_recurring}
-                    onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
-                    />
+            <>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_recurring">Transação Recorrente</Label>
+                  <p className="text-sm text-muted-foreground">Repetir X vezes</p>
                 </div>
+                <Switch
+                  id="is_recurring"
+                  name="is_recurring"
+                  checked={values.is_recurring}
+                  onCheckedChange={(checked) => handleInputChange({ target: { name: "is_recurring", value: checked } } as any)}
+                />
+              </div>
 
-                {values.is_recurring && (
-                    <div className="space-y-2 animate-in fade-in">
-                    <Label htmlFor="recurrence_count">Número de Repetições</Label>
-                    <Input
-                        id="recurrence_count"
-                        name="recurrence_count"
-                        type="number"
-                        min="1"
-                        max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
-                        value={values.recurrence_count}
-                        onChange={handleInputChange}
-                    />
-                    </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                    <Label htmlFor="is_fixed">Lançamento Fixo</Label>
-                    <p className="text-sm text-muted-foreground">Mensal por 12 meses</p>
-                    </div>
-                    <Switch
-                    id="is_fixed"
-                    name="is_fixed"
-                    checked={values.is_fixed}
-                    onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
-                    />
+              {values.is_recurring && (
+                <div className="space-y-2 animate-in fade-in">
+                  <Label htmlFor="recurrence_count">Número de Repetições</Label>
+                  <Input
+                    id="recurrence_count"
+                    name="recurrence_count"
+                    type="number"
+                    min="1"
+                    max={SECURITY_LIMITS.MAX_RECURRENCE_COUNT}
+                    value={values.recurrence_count}
+                    onChange={handleInputChange}
+                  />
                 </div>
-              </>
+              )}
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_fixed">Lançamento Fixo</Label>
+                  <p className="text-sm text-muted-foreground">Mensal por 12 meses</p>
+                </div>
+                <Switch
+                  id="is_fixed"
+                  name="is_fixed"
+                  checked={values.is_fixed}
+                  onCheckedChange={(checked) => handleInputChange({ target: { name: "is_fixed", value: checked } } as any)}
+                />
+              </div>
+            </>
           )}
 
           <Separator />
@@ -634,7 +680,7 @@ export const AddTransactionDialog = ({ type, trigger, onSuccess, eventId, defaul
               id="is_pending"
               name="is_pending"
               checked={values.is_credit_card ? true : values.is_pending}
-              disabled={values.is_credit_card} 
+              disabled={values.is_credit_card}
               onCheckedChange={(checked) => handleInputChange({ target: { name: "is_pending", value: checked } } as any)}
             />
           </div>

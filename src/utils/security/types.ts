@@ -21,6 +21,7 @@ export interface TransactionData {
   event_id?: string | null;
   is_credit_card?: boolean;
   card_closing_date?: string | null;
+  credit_card_id?: string | null;
   installment_number?: number | null;
   total_installments?: number | null;
 }
